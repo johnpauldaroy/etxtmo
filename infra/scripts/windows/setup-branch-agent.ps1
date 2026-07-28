@@ -317,8 +317,10 @@ if (-not $SkipServiceInstall) {
     $nssmExe = Get-Nssm -ExplicitPath $NssmPath -InstallRoot (Join-Path $RepoRoot "infra\scripts\windows\tools")
 
     $agentServiceName = "TextKonekBranchAgent-$BranchCode"
-    & $nssmExe stop $agentServiceName 2>&1 | Out-Null
-    & $nssmExe remove $agentServiceName confirm 2>&1 | Out-Null
+    # Same as the gammu-smsd uninstall above: nothing to stop/remove on a
+    # first-time run, so these are expected to "fail" harmlessly.
+    try { & $nssmExe stop $agentServiceName 2>&1 | Out-Null } catch { }
+    try { & $nssmExe remove $agentServiceName confirm 2>&1 | Out-Null } catch { }
 
     & $nssmExe install $agentServiceName $pythonExe "-m agent.main"
     & $nssmExe set $agentServiceName AppDirectory $branchAgentDir
