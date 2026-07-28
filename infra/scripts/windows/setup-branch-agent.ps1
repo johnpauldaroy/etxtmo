@@ -60,6 +60,15 @@ function Write-Step($message) {
     Write-Host "==> $message" -ForegroundColor Cyan
 }
 
+function Set-ContentNoBom([string]$Path, [string]$Content) {
+    # Windows PowerShell 5.1's `Set-Content -Encoding UTF8` always writes a
+    # BOM, which breaks tools that read these files as plain UTF-8 (e.g.
+    # pydantic-settings sees a "﻿API_BASE_URL" key instead of
+    # "API_BASE_URL" and rejects it as an unknown field).
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 function Assert-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -196,11 +205,12 @@ foreach ($sub in "inbox", "outbox", "sent", "error") {
 }
 
 $gammurcPath = Join-Path $brandDir "gammurc"
-@"
+$gammurcContent = @"
 [gammu]
 device = $ComPort
 connection = at$BaudRate
-"@ | Set-Content -Path $gammurcPath -Encoding UTF8
+"@
+Set-ContentNoBom -Path $gammurcPath -Content $gammurcContent
 
 $identity = & $gammuExe -c $gammurcPath identify 2>&1
 Write-Host $identity
@@ -210,7 +220,7 @@ Write-Step "Writing gammu-smsd config (smsdrc)"
 
 $smsdLogPath = Join-Path $brandDir "smsd.log"
 $smsdrcPath = Join-Path $brandDir "smsdrc"
-@"
+$smsdrcContent = @"
 [gammu]
 device = $ComPort
 connection = at$BaudRate
@@ -228,7 +238,8 @@ inboxpath = $spoolRoot\inbox\
 outboxpath = $spoolRoot\outbox\
 sentsmspath = $spoolRoot\sent\
 errorsmspath = $spoolRoot\error\
-"@ | Set-Content -Path $smsdrcPath -Encoding UTF8
+"@
+Set-ContentNoBom -Path $smsdrcPath -Content $smsdrcContent
 
 Write-Host "Wrote $smsdrcPath"
 
@@ -248,7 +259,7 @@ if (Test-Path $envPath) {
     Copy-Item -Path $envPath -Destination $backupPath
     Write-Host "Existing .env backed up to $backupPath" -ForegroundColor Yellow
 }
-@"
+$envContent = @"
 API_BASE_URL=$ApiBaseUrl
 API_USERNAME=$ApiUsername
 API_PASSWORD=$ApiPassword
@@ -263,7 +274,8 @@ GAMMU_SENT_PATH=$spoolRoot\sent
 GAMMU_ERROR_PATH=$spoolRoot\error
 GAMMU_INBOX_PATH=$spoolRoot\inbox
 GAMMU_CURSOR_DB_PATH=$brandDir\agent-cursor.sqlite
-"@ | Set-Content -Path $envPath -Encoding UTF8
+"@
+Set-ContentNoBom -Path $envPath -Content $envContent
 
 Write-Host "Wrote $envPath"
 
