@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import sqlite3
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,18 @@ from typing import Any
 _OUT_PREFIX = "OUT"
 _IN_PATTERN = re.compile(
     r"^IN(?P<date>\d{8})_(?P<time>\d{6})_(?P<serial>\d+)_(?P<sender>.+)_(?P<sequence>\d+)\.\w+$",
+)
+
+# gammu-smsd logs this when it can't open the modem's serial port at all
+# (unplugged, wrong port, driver gone) -- distinct from transient send/status
+# errors ("Error getting SMS status", timeouts) that can happen even with a
+# healthy connection. "Starting phone communication..." precedes *every*
+# connection attempt (successful or not), so it can't be used as a recovery
+# signal on its own -- only whether a connection-error line follows it.
+_CONNECTION_ATTEMPT_MARKER = "Starting phone communication"
+_CONNECTION_ERROR_MARKERS = (
+    "Error opening device",
+    "Error at init connection",
 )
 
 
@@ -31,8 +42,7 @@ class GammuBackend:
         error_path: str,
         inbox_path: str,
         cursor_db_path: str,
-        gammu_exe_path: str | None = None,
-        gammu_config_path: str | None = None,
+        smsd_log_path: str | None = None,
     ) -> None:
         self.outbox_path = Path(outbox_path)
         self.sent_path = Path(sent_path)
@@ -41,8 +51,7 @@ class GammuBackend:
         for path in (self.outbox_path, self.sent_path, self.error_path, self.inbox_path):
             path.mkdir(parents=True, exist_ok=True)
 
-        self.gammu_exe_path = gammu_exe_path
-        self.gammu_config_path = gammu_config_path
+        self.smsd_log_path = Path(smsd_log_path) if smsd_log_path else None
 
         self.conn = sqlite3.connect(cursor_db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -166,28 +175,44 @@ class GammuBackend:
 
         return items
 
-    def is_modem_reachable(self, *, timeout_seconds: int = 10) -> bool:
-        """Probe the modem directly via `gammu identify` -- Gammu SMSD owning
-        the port and writing to spool folders only proves the *service* is
-        running, not that a modem is actually plugged in and responding.
-        Returns True (assume reachable) if no gammu_exe_path is configured,
-        so branch PCs that haven't set this up yet keep prior behavior."""
-        if not self.gammu_exe_path:
+    def is_modem_reachable(self, *, tail_bytes: int = 8192) -> bool:
+        """Infer modem connectivity from gammu-smsd's own log instead of
+        probing the port ourselves -- gammu-smsd holds the COM port
+        exclusively while running, so a second process trying to open it
+        (e.g. `gammu identify`) always fails with "already opened by
+        another app" regardless of whether the modem itself is reachable.
+
+        Scans the tail of the log for the most recent connection attempt
+        ("Starting phone communication...", logged before every attempt,
+        successful or not) and checks whether a connection-error line
+        immediately follows it. Returns True (assume reachable) if no
+        smsd_log_path is configured or the log doesn't exist yet, so
+        branch PCs that haven't set this up keep prior behavior."""
+        if not self.smsd_log_path or not self.smsd_log_path.exists():
             return True
-        command = [self.gammu_exe_path]
-        if self.gammu_config_path:
-            command += ["-c", self.gammu_config_path]
-        command.append("identify")
+
         try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                timeout=timeout_seconds,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        return result.returncode == 0
+            with self.smsd_log_path.open("rb") as handle:
+                handle.seek(0, 2)
+                size = handle.tell()
+                handle.seek(max(0, size - tail_bytes))
+                tail = handle.read().decode("utf-8", errors="replace")
+        except OSError:
+            return True
+
+        lines = tail.splitlines()
+        last_attempt_index = None
+        for index in range(len(lines) - 1, -1, -1):
+            if _CONNECTION_ATTEMPT_MARKER in lines[index]:
+                last_attempt_index = index
+                break
+        if last_attempt_index is None:
+            return True
+
+        for line in lines[last_attempt_index:]:
+            if any(marker in line for marker in _CONNECTION_ERROR_MARKERS):
+                return False
+        return True
 
     def simulate_send_once(self, *, limit: int = 50) -> int:
         """

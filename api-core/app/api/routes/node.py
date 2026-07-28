@@ -47,6 +47,17 @@ def register_modem(
     if payload.imei:
         existing = db.execute(select(Modem).where(Modem.imei == payload.imei)).scalar_one_or_none()
     if existing is None:
+        # No IMEI configured (common -- it's optional): fall back to
+        # (branch_id, node_name) so restarting branch-agent reconciles into
+        # the same row instead of registering a new modem every time.
+        existing = db.execute(
+            select(Modem).where(
+                Modem.branch_id == payload.branch_id,
+                Modem.node_name == payload.node_name,
+                Modem.imei.is_(None),
+            ),
+        ).scalar_one_or_none()
+    if existing is None:
         modem = Modem(**payload.model_dump(), status=ModemStatus.online, last_seen_at=datetime.now(timezone.utc))
         db.add(modem)
     else:

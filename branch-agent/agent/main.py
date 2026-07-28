@@ -24,8 +24,7 @@ class BranchAgent:
             error_path=settings.gammu_error_path,
             inbox_path=settings.gammu_inbox_path,
             cursor_db_path=settings.gammu_cursor_db_path,
-            gammu_exe_path=settings.gammu_exe_path,
-            gammu_config_path=settings.gammu_config_path,
+            smsd_log_path=settings.smsd_log_path,
         )
         self.modem_id: str | None = None
         self._last_heartbeat = 0.0

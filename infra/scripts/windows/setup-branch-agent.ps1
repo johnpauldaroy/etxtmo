@@ -274,8 +274,7 @@ GAMMU_SENT_PATH=$spoolRoot\sent
 GAMMU_ERROR_PATH=$spoolRoot\error
 GAMMU_INBOX_PATH=$spoolRoot\inbox
 GAMMU_CURSOR_DB_PATH=$brandDir\agent-cursor.sqlite
-GAMMU_EXE_PATH=$gammuExe
-GAMMU_CONFIG_PATH=$gammurcPath
+SMSD_LOG_PATH=$smsdLogPath
 MODEM_CHECK_INTERVAL_SECONDS=60
 "@
 Set-ContentNoBom -Path $envPath -Content $envContent
