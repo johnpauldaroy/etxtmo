@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { AlertTriangle, Eye, EyeOff } from "lucide-react";
 
-import logoFull from "../assets/logo-full.png";
+import logoMark from "../assets/logo-mark.png";
 
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
@@ -31,7 +31,10 @@ export function LoginPage({
     <div className="flex min-h-screen items-center justify-center p-4 md:p-8">
       <Card className="w-full max-w-md animate-slide-up border-white/70 bg-card/95 shadow-xl backdrop-blur">
         <CardHeader>
-          <img src={logoFull} alt="e-txtmo" className="h-14 w-auto object-contain" />
+          <div className="flex items-center gap-3">
+            <img src={logoMark} alt="" className="h-12 w-12 object-contain" />
+            <p className="font-heading text-2xl font-semibold leading-none">e-txtmo</p>
+          </div>
           <CardDescription>Multi-branch messaging dashboard with campaign and queue operations.</CardDescription>
         </CardHeader>
         <CardContent>
