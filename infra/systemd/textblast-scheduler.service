@@ -1,0 +1,14 @@
+[Unit]
+Description=TextBlast Scheduler Worker
+After=textblast-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/textblast/api-core
+EnvironmentFile=/opt/textblast/infra/env/api-core.env
+ExecStart=/bin/bash -lc 'while true; do /opt/textblast/api-core/.venv/bin/python -m app.workers.scheduler_worker; sleep 15; done'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=TextBlast Branch Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/textblast/branch-agent
+EnvironmentFile=/opt/textblast/infra/env/branch-agent.env
+ExecStart=/opt/textblast/branch-agent/.venv/bin/python -m agent.main
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

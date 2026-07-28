@@ -1,0 +1,14 @@
+[Unit]
+Description=TextBlast FastAPI API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/textblast/api-core
+EnvironmentFile=/opt/textblast/infra/env/api-core.env
+ExecStart=/opt/textblast/api-core/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=TextBlast Dispatch Worker
+After=textblast-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/textblast/api-core
+EnvironmentFile=/opt/textblast/infra/env/api-core.env
+ExecStart=/bin/bash -lc 'while true; do /opt/textblast/api-core/.venv/bin/python -m app.workers.dispatch_worker; sleep 30; done'
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
