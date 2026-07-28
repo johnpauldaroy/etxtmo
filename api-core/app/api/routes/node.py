@@ -49,13 +49,20 @@ def register_modem(
     if existing is None:
         # No IMEI configured (common -- it's optional): fall back to
         # (branch_id, node_name) so restarting branch-agent reconciles into
-        # the same row instead of registering a new modem every time.
+        # the same row instead of registering a new modem every time. Use
+        # the most recently updated match rather than scalar_one_or_none(),
+        # since duplicate rows can already exist from before this fallback
+        # existed -- picking one deterministically beats crashing the whole
+        # registration on MultipleResultsFound.
         existing = db.execute(
-            select(Modem).where(
+            select(Modem)
+            .where(
                 Modem.branch_id == payload.branch_id,
                 Modem.node_name == payload.node_name,
                 Modem.imei.is_(None),
-            ),
+            )
+            .order_by(Modem.updated_at.desc())
+            .limit(1),
         ).scalar_one_or_none()
     if existing is None:
         modem = Modem(**payload.model_dump(), status=ModemStatus.online, last_seen_at=datetime.now(timezone.utc))
