@@ -1,27 +1,28 @@
 <#
 .SYNOPSIS
-    One-off onboarding for Branch 001 (Barbaza Main) against production.
+    Onboards any branch's modem PC against production, without needing to
+    know the branch's UUID ahead of time.
 
 .DESCRIPTION
-    Looks up the branch by code "001" via the production API, then delegates
-    to setup-branch-agent.ps1 to detect the modem, configure Gammu SMSD,
-    create the branch-agent API user, and install both as Windows services.
+    Looks up the branch by code via the production API, then delegates to
+    bootstrap-branch.ps1 (downloads the branch-agent package, sets up the
+    venv, detects the modem, configures Gammu SMSD, creates the branch's
+    API user, and installs both as Windows services).
 
-    Run this once, as Administrator, with the modem plugged into COM11
-    (or let it auto-detect).
+    Run this once per branch PC, as Administrator, with the modem plugged in.
 
-.NOTES
-    Prompts for the admin password interactively -- it is not hard-coded
-    here since this file may end up committed to the repo.
+.EXAMPLE
+    .\onboard-branch.ps1 -BranchCode 002 -AgentApiUsername branch-agent-002
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true)][string]$BranchCode,
+    [Parameter(Mandatory = $true)][string]$AgentApiUsername,
+
     [string]$ApiBaseUrl = "https://etxtmo.barbazampc.cloud",
     [string]$AdminUsername = "jp",
-    [string]$BranchCode = "001",
-    [string]$AgentApiUsername = "branch-agent-001",
-    [string]$ComPort = "COM11"
+    [string]$ComPort
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,24 +43,27 @@ Write-Host "==> Looking up branch code $BranchCode" -ForegroundColor Cyan
 $branches = Invoke-RestMethod -Method Get -Uri "$ApiBaseUrl/api/admin/branches" -Headers $headers
 $branch = $branches | Where-Object { $_.code -eq $BranchCode }
 if (-not $branch) {
-    throw "No branch found with code '$BranchCode'. Existing codes: $(($branches | ForEach-Object { $_.code }) -join ', ')"
+    throw "No branch found with code '$BranchCode'. Existing codes: $(($branches | ForEach-Object { $_.code }) -join ', '). Create it first: Administration -> Branches -> Add branch."
 }
 Write-Host "Found branch: $($branch.code) - $($branch.name) ($($branch.id))" -ForegroundColor Green
 
-Write-Host "==> Setting a password for the branch-agent API user" -ForegroundColor Cyan
+Write-Host "==> Setting a password for $AgentApiUsername" -ForegroundColor Cyan
 $AgentPassword = Read-Host "New password for $AgentApiUsername" -AsSecureString
 $AgentPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($AgentPassword)
 )
 
-& (Join-Path $scriptDir "setup-branch-agent.ps1") `
-    -BranchCode $BranchCode `
-    -BranchName $branch.name `
-    -BranchId $branch.id `
-    -ApiBaseUrl $ApiBaseUrl `
-    -ApiUsername $AgentApiUsername `
-    -ApiPassword $AgentPasswordPlain `
-    -ComPort $ComPort `
-    -CreateApiUser `
-    -AdminUsername $AdminUsername `
-    -AdminPassword $AdminPasswordPlain
+$bootstrapArgs = @{
+    BranchCode    = $BranchCode
+    BranchName    = $branch.name
+    BranchId      = $branch.id
+    ApiBaseUrl    = $ApiBaseUrl
+    ApiUsername   = $AgentApiUsername
+    ApiPassword   = $AgentPasswordPlain
+    CreateApiUser = $true
+    AdminUsername = $AdminUsername
+    AdminPassword = $AdminPasswordPlain
+}
+if ($ComPort) { $bootstrapArgs["ComPort"] = $ComPort }
+
+& (Join-Path $scriptDir "bootstrap-branch.ps1") @bootstrapArgs

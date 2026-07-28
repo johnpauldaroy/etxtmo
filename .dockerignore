@@ -25,6 +25,7 @@ docs
 infra
 !infra/scripts/windows/setup-branch-agent.ps1
 !infra/scripts/windows/bootstrap-branch.ps1
+!infra/scripts/windows/onboard-branch.ps1
 skill (1)
 *.md
 !branch-agent/README.md

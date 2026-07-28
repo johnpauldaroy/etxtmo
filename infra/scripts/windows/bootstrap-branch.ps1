@@ -3,10 +3,11 @@
     Sets up a branch PC's GSM modem end-to-end with no git clone required.
 
 .DESCRIPTION
-    Downloads the standalone branch-agent package from this repo's GitHub
-    Release, extracts it, creates the Python virtualenv, then runs
-    setup-branch-agent.ps1 to detect the modem, configure Gammu SMSD,
-    create the branch's API user, and install both as Windows services.
+    Downloads the standalone branch-agent package from the app's own
+    /downloads/branch-agent.zip, extracts it, creates the Python
+    virtualenv, then runs setup-branch-agent.ps1 to detect the modem,
+    configure Gammu SMSD, create the branch's API user, and install both
+    as Windows services.
 
     Prerequisites on this PC: Python 3.12+ on PATH, Gammu installed, the
     GSM modem plugged in.
