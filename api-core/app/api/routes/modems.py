@@ -4,6 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -74,6 +75,40 @@ def create_modem(
     db.commit()
     db.refresh(modem)
     return ModemOut.model_validate(modem)
+
+
+@router.delete("/{modem_id}")
+def delete_modem(
+    modem_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    modem = db.get(Modem, modem_id)
+    if modem is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modem not found")
+    assert_branch_access(db, current_user, modem.branch_id)
+
+    branch_id = modem.branch_id
+    db.delete(modem)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This modem has message history and cannot be deleted.",
+        ) from None
+
+    record_audit_event(
+        db,
+        action="modem_deleted",
+        entity_type="modem",
+        entity_id=str(modem_id),
+        user_id=current_user.id,
+        branch_id=branch_id,
+    )
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.get("/heartbeats")

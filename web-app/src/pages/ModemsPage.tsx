@@ -97,6 +97,21 @@ export function ModemsPage({
     }
   }
 
+  async function deleteModem(modemId: string) {
+    if (!window.confirm("Remove this modem? This cannot be undone.")) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      await apiRequest(`/api/modems/${modemId}`, "DELETE", undefined, token);
+      await onRefresh();
+      setNotice("Modem removed.");
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const backupOptions = useMemo(
     () => branches.filter((branch) => branch.id !== selectedBranch && !failoverStatus?.routes.some((route) => route.backup_branch_id === branch.id)),
     [branches, failoverStatus?.routes, selectedBranch],
@@ -280,10 +295,22 @@ export function ModemsPage({
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Node</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Node</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead><TableHead className="w-10" /></TableRow></TableHeader>
             <TableBody>
-              {pagination.pageItems.map((modem) => <TableRow key={modem.id}><TableCell className="font-medium">{modem.name}</TableCell><TableCell>{modem.node_name}</TableCell><TableCell><Badge variant={mapStatusToBadge(modem.status)}>{modem.status}</Badge></TableCell><TableCell>{formatDate(modem.last_seen_at)}</TableCell></TableRow>)}
-              {modems.length === 0 && <EmptyRow colSpan={4} message="No registered modems." />}
+              {pagination.pageItems.map((modem) => (
+                <TableRow key={modem.id}>
+                  <TableCell className="font-medium">{modem.name}</TableCell>
+                  <TableCell>{modem.node_name}</TableCell>
+                  <TableCell><Badge variant={mapStatusToBadge(modem.status)}>{modem.status}</Badge></TableCell>
+                  <TableCell>{formatDate(modem.last_seen_at)}</TableCell>
+                  <TableCell>
+                    <Button size="icon" variant="ghost" disabled={busy} aria-label="Remove modem" onClick={() => void deleteModem(modem.id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {modems.length === 0 && <EmptyRow colSpan={5} message="No registered modems." />}
             </TableBody>
           </Table>
           <Pagination {...pagination} totalItems={modems.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
