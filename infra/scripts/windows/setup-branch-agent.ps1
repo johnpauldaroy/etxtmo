@@ -278,7 +278,7 @@ if ($CreateApiUser) {
     $headers = @{ Authorization = "Bearer $($login.access_token)" }
 
     $userBody = @{
-        email     = if ($ApiUserEmail) { $ApiUserEmail } else { "$ApiUsername@textkonek.local" }
+        email     = if ($ApiUserEmail) { $ApiUserEmail } else { "$ApiUsername@barbazampc.coop" }
         username  = $ApiUsername
         full_name = if ($ApiUserFullName) { $ApiUserFullName } else { "Branch Agent - $BranchName" }
         password  = $ApiPassword
