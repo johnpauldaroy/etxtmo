@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0005_remove_schedule_source_campaign"
+revision = "0005_rm_schedule_src_campaign"
 down_revision = "0004_schedule_source_campaign"
 branch_labels = None
 depends_on = None

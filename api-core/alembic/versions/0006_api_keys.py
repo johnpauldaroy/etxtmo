@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0006_api_keys"
-down_revision = "0005_remove_schedule_source_campaign"
+down_revision = "0005_rm_schedule_src_campaign"
 branch_labels = None
 depends_on = None
 
