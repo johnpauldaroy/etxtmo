@@ -26,3 +26,6 @@ class AgentSettings(BaseSettings):
     gammu_cursor_db_path: str = Field(default="./gammu-cursor.sqlite", alias="GAMMU_CURSOR_DB_PATH")
     simulate_send: bool = Field(default=False, alias="SIMULATE_SEND")
     simulate_send_batch_size: int = Field(default=50, alias="SIMULATE_SEND_BATCH_SIZE")
+    gammu_exe_path: str | None = Field(default=None, alias="GAMMU_EXE_PATH")
+    gammu_config_path: str | None = Field(default=None, alias="GAMMU_CONFIG_PATH")
+    modem_check_interval_seconds: int = Field(default=60, alias="MODEM_CHECK_INTERVAL_SECONDS")

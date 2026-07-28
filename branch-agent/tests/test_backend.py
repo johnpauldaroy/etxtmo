@@ -43,11 +43,29 @@ def test_simulate_send_once_generates_delivery_updates(tmp_path: Path):
         backend.close()
 
 
-def make_backend(tmp_path: Path) -> GammuBackend:
+def test_is_modem_reachable_defaults_true_without_gammu_exe_path(tmp_path: Path):
+    backend = make_backend(tmp_path)
+    try:
+        assert backend.is_modem_reachable() is True
+    finally:
+        backend.close()
+
+
+def test_is_modem_reachable_false_when_gammu_exe_missing(tmp_path: Path):
+    backend = make_backend(tmp_path, gammu_exe_path=str(tmp_path / "does-not-exist.exe"))
+    try:
+        assert backend.is_modem_reachable() is False
+    finally:
+        backend.close()
+
+
+def make_backend(tmp_path: Path, *, gammu_exe_path: str | None = None, gammu_config_path: str | None = None) -> GammuBackend:
     return GammuBackend(
         outbox_path=str(tmp_path / "outbox"),
         sent_path=str(tmp_path / "sent"),
         error_path=str(tmp_path / "error"),
         inbox_path=str(tmp_path / "inbox"),
         cursor_db_path=str(tmp_path / "cursor.sqlite"),
+        gammu_exe_path=gammu_exe_path,
+        gammu_config_path=gammu_config_path,
     )

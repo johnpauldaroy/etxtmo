@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ class GammuBackend:
         error_path: str,
         inbox_path: str,
         cursor_db_path: str,
+        gammu_exe_path: str | None = None,
+        gammu_config_path: str | None = None,
     ) -> None:
         self.outbox_path = Path(outbox_path)
         self.sent_path = Path(sent_path)
@@ -37,6 +40,9 @@ class GammuBackend:
         self.inbox_path = Path(inbox_path)
         for path in (self.outbox_path, self.sent_path, self.error_path, self.inbox_path):
             path.mkdir(parents=True, exist_ok=True)
+
+        self.gammu_exe_path = gammu_exe_path
+        self.gammu_config_path = gammu_config_path
 
         self.conn = sqlite3.connect(cursor_db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -159,6 +165,29 @@ class GammuBackend:
             self._mark_processed("tb_processed_inbox", path.name)
 
         return items
+
+    def is_modem_reachable(self, *, timeout_seconds: int = 10) -> bool:
+        """Probe the modem directly via `gammu identify` -- Gammu SMSD owning
+        the port and writing to spool folders only proves the *service* is
+        running, not that a modem is actually plugged in and responding.
+        Returns True (assume reachable) if no gammu_exe_path is configured,
+        so branch PCs that haven't set this up yet keep prior behavior."""
+        if not self.gammu_exe_path:
+            return True
+        command = [self.gammu_exe_path]
+        if self.gammu_config_path:
+            command += ["-c", self.gammu_config_path]
+        command.append("identify")
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
 
     def simulate_send_once(self, *, limit: int = 50) -> int:
         """

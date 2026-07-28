@@ -24,9 +24,13 @@ class BranchAgent:
             error_path=settings.gammu_error_path,
             inbox_path=settings.gammu_inbox_path,
             cursor_db_path=settings.gammu_cursor_db_path,
+            gammu_exe_path=settings.gammu_exe_path,
+            gammu_config_path=settings.gammu_config_path,
         )
         self.modem_id: str | None = None
         self._last_heartbeat = 0.0
+        self._last_modem_check = 0.0
+        self._modem_reachable = True
 
     def close(self) -> None:
         self.api.close()
@@ -46,6 +50,16 @@ class BranchAgent:
         self.modem_id = modem["id"]
         logger.info("Registered modem %s", self.modem_id)
 
+    def refresh_modem_reachable_if_due(self) -> None:
+        now = time.time()
+        if now - self._last_modem_check < self.settings.modem_check_interval_seconds:
+            return
+        reachable = self.backend.is_modem_reachable()
+        if reachable != self._modem_reachable:
+            logger.warning("Modem reachability changed: %s", "reachable" if reachable else "unreachable")
+        self._modem_reachable = reachable
+        self._last_modem_check = now
+
     def heartbeat_if_due(self) -> None:
         now = time.time()
         if now - self._last_heartbeat < self.settings.heartbeat_interval_seconds:
@@ -54,7 +68,7 @@ class BranchAgent:
             {
                 "branch_id": str(self.settings.branch_id),
                 "node_name": self.settings.node_name,
-                "status": "online",
+                "status": "online" if self._modem_reachable else "offline",
                 "payload": {"modem_id": self.modem_id, "timestamp": datetime.now(timezone.utc).isoformat()},
             },
         )
@@ -148,6 +162,7 @@ class BranchAgent:
             )
         while True:
             try:
+                self.refresh_modem_reachable_if_due()
                 self.heartbeat_if_due()
                 self.pull_and_enqueue_jobs()
                 self.process_outbound_if_enabled()
