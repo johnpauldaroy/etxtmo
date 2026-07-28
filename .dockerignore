@@ -1,0 +1,27 @@
+.git
+.gitattributes
+.gitignore
+
+**/.venv
+**/.venv-py314
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/pytest-cache-files-*
+**/dist
+
+**/.env
+**/.env.*
+
+api-core/textblast-dev.db
+api-core/*.db
+api-core/*.sqlite*
+
+branch-agent/gammu-config/
+branch-agent/gammu-config-*/
+
+docs
+infra
+skill (1)
+*.md

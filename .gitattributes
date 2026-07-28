@@ -1,0 +1,6 @@
+# Force LF line endings for files that run inside Linux containers.
+# Windows checkouts with core.autocrlf=true would otherwise convert these
+# to CRLF, which breaks shebang lines (`/bin/bash^M: bad interpreter`).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf
