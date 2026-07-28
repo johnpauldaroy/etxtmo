@@ -37,7 +37,7 @@ param(
     [string]$AdminPassword,
 
     [string]$InstallRoot = "C:\etxtmo-branch-agent",
-    [string]$PackageUrl = "https://github.com/johnpauldaroy/etxtmo/releases/download/branch-agent-latest/branch-agent.zip"
+    [string]$PackageUrl = "https://etxtmo.barbazampc.cloud/downloads/branch-agent.zip"
 )
 
 $ErrorActionPreference = "Stop"
