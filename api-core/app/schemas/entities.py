@@ -29,6 +29,10 @@ class UserCreate(BaseModel):
     branch_id: uuid.UUID | None = None
 
 
+class PasswordReset(BaseModel):
+    password: str = Field(min_length=8)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

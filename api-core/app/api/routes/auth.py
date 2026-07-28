@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,7 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, get_optional_current_user
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models import Branch, User, UserBranch
-from app.schemas import LoginRequest, Token, UserCreate, UserOut
+from app.schemas import LoginRequest, PasswordReset, Token, UserCreate, UserOut
 from app.services.audit import record_audit_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -87,3 +89,31 @@ def create_user(
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)) -> UserOut:
     return UserOut.model_validate(current_user)
+
+
+@router.put("/users/{user_id}/password", response_model=UserOut)
+def reset_password(
+    user_id: uuid.UUID,
+    payload: PasswordReset,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserOut:
+    if not current_user.is_superuser and current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot reset another user's password")
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.password_hash = get_password_hash(payload.password)
+    db.flush()
+    record_audit_event(
+        db,
+        action="password_reset",
+        entity_type="user",
+        entity_id=str(user.id),
+        user_id=current_user.id,
+    )
+    db.commit()
+    db.refresh(user)
+    return UserOut.model_validate(user)
