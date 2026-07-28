@@ -4,7 +4,7 @@ set -e
 cd /app
 export PYTHONPATH=/app
 alembic upgrade head
-python -m app.scripts.seed_admin
+python -m app.scripts.seed_admin || echo "seed_admin: failed, continuing startup"
 
 uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 UVICORN_PID=$!
