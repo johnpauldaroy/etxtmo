@@ -33,6 +33,7 @@ export type CampaignBatchUploadResult = {
 export type CampaignSubmitResult = { status: string; recipients: number; queued: number };
 export type CampaignRecipientDetail = {
   id: string;
+  queue_id: string | null;
   contact_name: string;
   phone_number: string;
   message_body: string;

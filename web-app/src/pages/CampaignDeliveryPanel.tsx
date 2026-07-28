@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, LoaderCircle, X } from "lucide-react";
+import { Eye, LoaderCircle, RotateCw, X } from "lucide-react";
 
 import { apiRequest } from "../api/client";
 import { Badge } from "../components/ui/badge";
@@ -25,6 +25,8 @@ export function CampaignDeliveryPanel({ campaigns, token }: CampaignDeliveryPane
   const [recipientDetails, setRecipientDetails] = useState<CampaignRecipientDetail[]>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState("");
+  const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
+  const [retryAllBusy, setRetryAllBusy] = useState(false);
   const recipientPagination = usePagination(recipientDetails);
   const deliveryCounts = recipientDetails.reduce<Record<string, number>>((counts, recipient) => {
     counts[recipient.status] = (counts[recipient.status] ?? 0) + 1;
@@ -58,6 +60,31 @@ export function CampaignDeliveryPanel({ campaigns, token }: CampaignDeliveryPane
       setDetailsError((error as Error).message);
     } finally {
       setDetailsLoading(false);
+    }
+  }
+
+  async function retryOne(queueId: string) {
+    setRetryBusyId(queueId);
+    try {
+      await apiRequest(`/api/queue/${queueId}/retry`, "POST", undefined, token);
+      if (selectedCampaign) await viewCampaign(selectedCampaign);
+    } catch (error) {
+      setDetailsError((error as Error).message);
+    } finally {
+      setRetryBusyId(null);
+    }
+  }
+
+  async function retryAllFailed() {
+    if (!selectedCampaign) return;
+    setRetryAllBusy(true);
+    try {
+      await apiRequest(`/api/queue/campaigns/${selectedCampaign.id}/retry-failed`, "POST", undefined, token);
+      await viewCampaign(selectedCampaign);
+    } catch (error) {
+      setDetailsError((error as Error).message);
+    } finally {
+      setRetryAllBusy(false);
     }
   }
 
@@ -166,6 +193,18 @@ export function CampaignDeliveryPanel({ campaigns, token }: CampaignDeliveryPane
                     ))}
                   </div>
 
+                  {(deliveryCounts.failed ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                      <p className="text-sm text-red-900">
+                        {deliveryCounts.failed} message{deliveryCounts.failed === 1 ? "" : "s"} failed to send. Resend once the modem is back online.
+                      </p>
+                      <Button variant="outline" size="sm" disabled={retryAllBusy} onClick={() => void retryAllFailed()}>
+                        <RotateCw className="h-4 w-4" />
+                        Resend all failed
+                      </Button>
+                    </div>
+                  )}
+
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -176,6 +215,7 @@ export function CampaignDeliveryPanel({ campaigns, token }: CampaignDeliveryPane
                         <TableHead>Attempts</TableHead>
                         <TableHead>Sent at</TableHead>
                         <TableHead>Error</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -190,9 +230,23 @@ export function CampaignDeliveryPanel({ campaigns, token }: CampaignDeliveryPane
                           <TableCell>{recipient.attempts}</TableCell>
                           <TableCell className="whitespace-nowrap">{formatDate(recipient.sent_at ?? undefined)}</TableCell>
                           <TableCell className="max-w-64 whitespace-normal text-muted-foreground">{recipient.error_message || "-"}</TableCell>
+                          <TableCell className="text-right">
+                            {recipient.status === "failed" && recipient.queue_id && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={retryBusyId === recipient.queue_id}
+                                onClick={() => void retryOne(recipient.queue_id!)}
+                              >
+                                <RotateCw className="h-4 w-4" />
+                                Resend
+                              </Button>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
-                      {recipientDetails.length === 0 && <EmptyRow colSpan={7} message="This campaign has no recipient messages." />}
+                      {recipientDetails.length === 0 && <EmptyRow colSpan={8} message="This campaign has no recipient messages." />}
                     </TableBody>
                   </Table>
                   <Pagination

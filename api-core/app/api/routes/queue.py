@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import assert_branch_access, get_current_user
-from app.models import Campaign, MessageLog, MessageQueue, QueueStatus, User
+from app.models import Campaign, CampaignRecipient, MessageLog, MessageQueue, QueueStatus, RecipientStatus, User
 from app.schemas import QueueItemOut
 from app.services.audit import record_audit_event
+from app.services.queue import recalculate_campaign_status
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -70,6 +71,9 @@ def retry_failed_message(
     item.execution_branch_id = None
     item.failover_route_id = None
     item.locked_at = None
+    recipient = db.get(CampaignRecipient, item.campaign_recipient_id)
+    if recipient is not None:
+        recipient.status = RecipientStatus.pending
     db.flush()
     record_audit_event(
         db,
@@ -79,5 +83,53 @@ def retry_failed_message(
         user_id=current_user.id,
         branch_id=item.branch_id,
     )
+    recalculate_campaign_status(db, item.campaign_id)
     db.commit()
     return {"status": "pending"}
+
+
+@router.post("/campaigns/{campaign_id}/retry-failed")
+def retry_failed_for_campaign(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    assert_branch_access(db, current_user, campaign.branch_id)
+
+    items = db.execute(
+        select(MessageQueue).where(
+            MessageQueue.campaign_id == campaign_id,
+            MessageQueue.status == QueueStatus.failed,
+        ),
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    for item in items:
+        item.status = QueueStatus.pending
+        item.next_attempt_at = now
+        item.error_message = None
+        item.modem_id = None
+        item.execution_branch_id = None
+        item.failover_route_id = None
+        item.locked_at = None
+        recipient = db.get(CampaignRecipient, item.campaign_recipient_id)
+        if recipient is not None:
+            recipient.status = RecipientStatus.pending
+
+    if items:
+        db.flush()
+        record_audit_event(
+            db,
+            action="queue_bulk_retry_requested",
+            entity_type="campaign",
+            entity_id=str(campaign_id),
+            user_id=current_user.id,
+            branch_id=campaign.branch_id,
+            payload={"retried": len(items)},
+        )
+        recalculate_campaign_status(db, campaign_id)
+        db.commit()
+    return {"retried": len(items)}

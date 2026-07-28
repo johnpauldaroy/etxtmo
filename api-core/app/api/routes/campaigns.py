@@ -302,6 +302,7 @@ def list_campaign_recipients(
         "items": [
             {
                 "id": str(recipient.id),
+                "queue_id": str(queue.id) if queue else None,
                 "contact_name": (
                     " ".join(part for part in ((contact.first_name or "").strip(), (contact.last_name or "").strip()) if part)
                     if contact
