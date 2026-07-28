@@ -53,7 +53,16 @@ export type QueueItem = {
   execution_branch_id?: string | null;
   failover_route_id?: string | null;
 };
-export type Modem = { id: string; name: string; node_name: string; status: string; last_seen_at?: string };
+export type Modem = {
+  id: string;
+  branch_id: string;
+  name: string;
+  node_name: string;
+  imei?: string | null;
+  port?: string | null;
+  status: string;
+  last_seen_at?: string;
+};
 export type Heartbeat = { node_name: string; status: string; last_seen_at: string };
 export type FailoverPolicy = {
   id?: string | null;

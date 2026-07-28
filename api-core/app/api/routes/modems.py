@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import assert_branch_access, get_current_user
-from app.models import Modem, NodeHeartbeat, SimCard, User
-from app.schemas import ModemOut, SimCardCreate, SimCardOut
+from app.models import Modem, ModemStatus, NodeHeartbeat, SimCard, User
+from app.schemas import ModemCreate, ModemOut, SimCardCreate, SimCardOut
 from app.services.audit import record_audit_event
 
 router = APIRouter(prefix="/modems", tags=["modems"])
@@ -26,6 +26,48 @@ def list_modems(
         select(Modem).where(Modem.branch_id == branch_id).order_by(Modem.created_at.desc()),
     ).scalars()
     return [ModemOut.model_validate(row) for row in rows]
+
+
+@router.post("", response_model=ModemOut)
+def create_modem(
+    payload: ModemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ModemOut:
+    assert_branch_access(db, current_user, payload.branch_id)
+
+    existing = None
+    if payload.imei:
+        existing = db.execute(select(Modem).where(Modem.imei == payload.imei)).scalar_one_or_none()
+    if existing is not None and existing.branch_id != payload.branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This modem IMEI is already registered to another branch",
+        )
+
+    if existing is None:
+        modem = Modem(**payload.model_dump(), status=ModemStatus.offline)
+        db.add(modem)
+        action = "modem_registered"
+    else:
+        modem = existing
+        modem.node_name = payload.node_name
+        modem.name = payload.name
+        modem.port = payload.port
+        action = "modem_updated"
+
+    db.flush()
+    record_audit_event(
+        db,
+        action=action,
+        entity_type="modem",
+        entity_id=str(modem.id),
+        user_id=current_user.id,
+        branch_id=payload.branch_id,
+    )
+    db.commit()
+    db.refresh(modem)
+    return ModemOut.model_validate(modem)
 
 
 @router.get("/heartbeats")

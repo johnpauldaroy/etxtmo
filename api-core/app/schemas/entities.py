@@ -342,6 +342,14 @@ class ModemRegister(BaseModel):
     port: str | None = None
 
 
+class ModemCreate(BaseModel):
+    branch_id: uuid.UUID
+    node_name: str = Field(max_length=100)
+    name: str = Field(max_length=100)
+    imei: str | None = Field(default=None, max_length=64)
+    port: str | None = Field(default=None, max_length=64)
+
+
 class ModemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

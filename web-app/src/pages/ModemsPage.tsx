@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Activity, Plus, Save, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Activity, Plus, Save, ShieldCheck, Trash2, TriangleAlert, X } from "lucide-react";
 
 import { apiRequest } from "../api/client";
 import { Badge } from "../components/ui/badge";
@@ -40,6 +40,14 @@ export function ModemsPage({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
+  const [isAddModemOpen, setIsAddModemOpen] = useState(false);
+  const [newModemBranch, setNewModemBranch] = useState(selectedBranch);
+  const [newModemName, setNewModemName] = useState("");
+  const [newModemNode, setNewModemNode] = useState("");
+  const [newModemPort, setNewModemPort] = useState("");
+  const [newModemImei, setNewModemImei] = useState("");
+  const [modemError, setModemError] = useState("");
+
   useEffect(() => {
     if (!failoverStatus) return;
     setEnabled(failoverStatus.policy.enabled);
@@ -47,6 +55,47 @@ export function ModemsPage({
     setFailoverDelay(failoverStatus.policy.failover_delay_seconds);
     setClaimTimeout(failoverStatus.policy.claim_timeout_seconds);
   }, [failoverStatus]);
+
+  useEffect(() => {
+    if (!isAddModemOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsAddModemOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isAddModemOpen]);
+
+  function openAddModem() {
+    setNewModemBranch(selectedBranch);
+    setNewModemName("");
+    setNewModemNode("");
+    setNewModemPort("");
+    setNewModemImei("");
+    setModemError("");
+    setIsAddModemOpen(true);
+  }
+
+  async function createModem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setModemError("");
+    try {
+      await apiRequest("/api/modems", "POST", {
+        branch_id: newModemBranch,
+        name: newModemName,
+        node_name: newModemNode,
+        port: newModemPort || null,
+        imei: newModemImei || null,
+      }, token);
+      await onRefresh();
+      setIsAddModemOpen(false);
+      setNotice("Modem registered.");
+    } catch (error) {
+      setModemError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const backupOptions = useMemo(
     () => branches.filter((branch) => branch.id !== selectedBranch && !failoverStatus?.routes.some((route) => route.backup_branch_id === branch.id)),
@@ -219,7 +268,16 @@ export function ModemsPage({
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Registered Modems</CardTitle><CardDescription>Current modem inventory and connectivity state.</CardDescription></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle>Registered Modems</CardTitle>
+            <CardDescription>Current modem inventory and connectivity state.</CardDescription>
+          </div>
+          <Button type="button" onClick={openAddModem}>
+            <Plus className="h-4 w-4" />
+            Add modem
+          </Button>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Node</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead></TableRow></TableHeader>
@@ -231,6 +289,95 @@ export function ModemsPage({
           <Pagination {...pagination} totalItems={modems.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
         </CardContent>
       </Card>
+
+      {isAddModemOpen && (
+        <div className="fixed inset-0 z-[70] grid place-items-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            aria-label="Close add modem dialog"
+            onClick={() => setIsAddModemOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-modem-title"
+            className="relative z-10 w-full max-w-lg animate-slide-up rounded-xl border bg-card p-6 shadow-2xl"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 id="add-modem-title" className="text-xl font-semibold">Register Modem</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Pre-provision a modem before it comes online. If the IMEI matches what branch-agent later reports, this entry updates in place instead of duplicating.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="-mr-2 -mt-2" onClick={() => setIsAddModemOpen(false)}>
+                <X className="h-5 w-5" />
+                <span className="sr-only">Close</span>
+              </Button>
+            </div>
+
+            <form className="space-y-4" onSubmit={(event) => void createModem(event)}>
+              <div className="space-y-2">
+                <label htmlFor="modem-branch" className="text-sm font-medium">Branch</label>
+                <SelectNative
+                  id="modem-branch"
+                  required
+                  value={newModemBranch}
+                  onChange={(event) => setNewModemBranch(event.target.value)}
+                >
+                  <option value="">Select branch</option>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.code} — {branch.name}</option>)}
+                </SelectNative>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="modem-name" className="text-sm font-medium">Modem name</label>
+                <Input
+                  id="modem-name"
+                  required
+                  autoFocus
+                  placeholder="e.g. modem-001"
+                  value={newModemName}
+                  onChange={(event) => setNewModemName(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="modem-node" className="text-sm font-medium">Node name</label>
+                <Input
+                  id="modem-node"
+                  required
+                  placeholder="e.g. branch-001-node-01"
+                  value={newModemNode}
+                  onChange={(event) => setNewModemNode(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="modem-port" className="text-sm font-medium">COM port (optional)</label>
+                <Input
+                  id="modem-port"
+                  placeholder="e.g. COM11"
+                  value={newModemPort}
+                  onChange={(event) => setNewModemPort(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="modem-imei" className="text-sm font-medium">IMEI (optional)</label>
+                <Input
+                  id="modem-imei"
+                  placeholder="Used to match this entry with branch-agent's report"
+                  value={newModemImei}
+                  onChange={(event) => setNewModemImei(event.target.value)}
+                />
+              </div>
+              {modemError && <p className="text-sm text-destructive">{modemError}</p>}
+              <div className="flex justify-end gap-2 border-t pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsAddModemOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={busy || !newModemBranch}>Register modem</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
