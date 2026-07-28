@@ -11,6 +11,7 @@ from app.core.deps import assert_branch_access, get_current_user
 from app.models import Modem, ModemStatus, NodeHeartbeat, SimCard, User
 from app.schemas import ModemCreate, ModemOut, SimCardCreate, SimCardOut
 from app.services.audit import record_audit_event
+from app.services.queue import effective_modem_status
 
 router = APIRouter(prefix="/modems", tags=["modems"])
 
@@ -25,7 +26,12 @@ def list_modems(
     rows = db.execute(
         select(Modem).where(Modem.branch_id == branch_id).order_by(Modem.created_at.desc()),
     ).scalars()
-    return [ModemOut.model_validate(row) for row in rows]
+    results = []
+    for row in rows:
+        out = ModemOut.model_validate(row)
+        out.status = effective_modem_status(row)
+        results.append(out)
+    return results
 
 
 @router.post("", response_model=ModemOut)

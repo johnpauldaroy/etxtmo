@@ -56,6 +56,9 @@ def render_contact_message(message: str, contact: Contact) -> str:
     return re.sub(r" +([,.;:!?])", r"\1", rendered)
 
 
+DEFAULT_MODEM_OFFLINE_AFTER_SECONDS = 90
+
+
 def healthy_modem_count(db: Session, branch_id: uuid.UUID, offline_after_seconds: int = 90) -> int:
     cutoff = now_utc() - timedelta(seconds=offline_after_seconds)
     return db.execute(
@@ -66,6 +69,23 @@ def healthy_modem_count(db: Session, branch_id: uuid.UUID, offline_after_seconds
             Modem.last_seen_at >= cutoff,
         ),
     ).scalar_one()
+
+
+def effective_modem_status(
+    modem: Modem,
+    offline_after_seconds: int = DEFAULT_MODEM_OFFLINE_AFTER_SECONDS,
+) -> ModemStatus:
+    """Nothing flips Modem.status back to offline when a branch-agent goes
+    silent (crash, unplugged modem, PC powered off) -- only a successful
+    heartbeat ever sets it, so the stored value can go stale indefinitely.
+    Derive the displayed status from last_seen_at age instead of trusting
+    the column directly."""
+    if modem.status != ModemStatus.online:
+        return modem.status
+    if modem.last_seen_at is None:
+        return ModemStatus.offline
+    cutoff = now_utc() - timedelta(seconds=offline_after_seconds)
+    return ModemStatus.online if modem.last_seen_at >= cutoff else ModemStatus.offline
 
 
 def _eligible_failover_sources(
