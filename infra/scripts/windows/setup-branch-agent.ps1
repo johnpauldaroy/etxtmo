@@ -283,13 +283,10 @@ if ($CreateApiUser) {
         full_name = if ($ApiUserFullName) { $ApiUserFullName } else { "Branch Agent - $BranchName" }
         password  = $ApiPassword
         is_superuser = $false
+        branch_id = $BranchId
     } | ConvertTo-Json
     $newUser = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/users" -ContentType "application/json" -Headers $headers -Body $userBody
-    Write-Host "Created user $($newUser.username) ($($newUser.id))"
-
-    $assignBody = @{ user_id = $newUser.id; branch_id = $BranchId; role_id = $null } | ConvertTo-Json
-    Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/admin/user-branches" -ContentType "application/json" -Headers $headers -Body $assignBody | Out-Null
-    Write-Host "Assigned $($newUser.username) to branch $BranchId"
+    Write-Host "Created user $($newUser.username) ($($newUser.id)), assigned to branch $BranchId"
 }
 
 # ---------------------------------------------------------------------------
