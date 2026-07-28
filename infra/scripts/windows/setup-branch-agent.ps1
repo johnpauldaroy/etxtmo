@@ -294,7 +294,10 @@ if (-not $SkipServiceInstall) {
     Write-Step "Installing gammu-smsd as a Windows service"
 
     $smsdServiceName = "GammuSMSD-$BranchCode"
-    & $smsdExe -u -n $smsdServiceName 2>&1 | Out-Null
+    # Uninstall any pre-existing service of this name first; on a first-time
+    # run there is nothing to remove, so this is expected to "fail" with
+    # error 1060 (service does not exist) -- that's not a real error here.
+    try { & $smsdExe -u -n $smsdServiceName 2>&1 | Out-Null } catch { }
     & $smsdExe -i -c $smsdrcPath -n $smsdServiceName
     & $smsdExe -e -n $smsdServiceName 2>&1 | Out-Null
     sc.exe config $smsdServiceName start= auto | Out-Null
