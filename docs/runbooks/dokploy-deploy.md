@@ -58,10 +58,18 @@ have no USB/serial device access.
    CORS_ORIGINS=https://etxtmo.barbazampc.cloud
    SYSTEM_TIMEZONE=Asia/Manila
    SCHEDULER_ENABLED=true
+   SEED_ADMIN_EMAIL=you@example.com
+   SEED_ADMIN_USERNAME=admin
+   SEED_ADMIN_PASSWORD=<choose a strong password>
+   SEED_ADMIN_FULL_NAME=Admin
    ```
    Generate `JWT_SECRET_KEY` with `openssl rand -hex 32` — never reuse the
    dev value. `API_HOST`/`API_PORT` are not needed here; the entrypoint
    script always binds uvicorn to `127.0.0.1:8000` internally.
+   `SEED_ADMIN_*` are optional but recommended: the entrypoint runs
+   `app/scripts/seed_admin.py` after every migration, which creates this
+   superuser only if the `users` table is still empty — safe to leave set
+   across future deploys, it no-ops once a user exists.
 5. **Domain**: Dokploy → app → Domains → add `etxtmo.barbazampc.cloud`,
    container port `80`, enable HTTPS (Dokploy provisions Let's Encrypt
    automatically).
@@ -75,10 +83,16 @@ have no USB/serial device access.
      network tab for same-origin `/api/` requests, not `localhost` or a
      different domain).
 
-## 3. Bootstrap the first superuser
+## 3. First superuser
 
-The API has no seeded users on a fresh database. Create the first superuser
-directly:
+If `SEED_ADMIN_EMAIL`/`SEED_ADMIN_USERNAME`/`SEED_ADMIN_PASSWORD` were set in
+step 2, the entrypoint already created this superuser automatically on
+deploy (see `api-core/app/scripts/seed_admin.py`) — just log in at
+`https://etxtmo.barbazampc.cloud` with those credentials.
+
+If those env vars were not set, create the first superuser manually instead
+(only works while the `users` table is empty — see
+`api-core/app/api/routes/auth.py::create_user`):
 
 ```bash
 curl -X POST https://etxtmo.barbazampc.cloud/api/auth/users \
@@ -91,11 +105,6 @@ curl -X POST https://etxtmo.barbazampc.cloud/api/auth/users \
     "is_superuser": true
   }'
 ```
-
-This only works while the `users` table is empty (see
-`api-core/app/api/routes/auth.py::create_user` — after the first user
-exists, creating more requires an authenticated superuser token). Log in at
-`https://etxtmo.barbazampc.cloud` with these credentials afterward.
 
 ## 4. Create branches and branch-agent API keys
 

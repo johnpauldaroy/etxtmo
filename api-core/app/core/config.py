@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
     system_timezone: str = Field(default="Asia/Manila", alias="SYSTEM_TIMEZONE")
     scheduler_enabled: bool = Field(default=True, alias="SCHEDULER_ENABLED")
+    seed_admin_email: str | None = Field(default=None, alias="SEED_ADMIN_EMAIL")
+    seed_admin_username: str | None = Field(default=None, alias="SEED_ADMIN_USERNAME")
+    seed_admin_password: str | None = Field(default=None, alias="SEED_ADMIN_PASSWORD")
+    seed_admin_full_name: str = Field(default="Administrator", alias="SEED_ADMIN_FULL_NAME")
 
     @property
     def cors_origin_list(self) -> list[str]:

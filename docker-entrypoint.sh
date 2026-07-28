@@ -4,6 +4,7 @@ set -e
 cd /app
 export PYTHONPATH=/app
 alembic upgrade head
+python -m app.scripts.seed_admin
 
 uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 UVICORN_PID=$!
