@@ -27,6 +27,15 @@ _CONNECTION_ERROR_MARKERS = (
     "Error writing to the device",
     "too many connection errors",
 )
+# Positive evidence that the last connection attempt actually reached the
+# phone, rather than merely "no error logged yet" -- a stuck/endlessly
+# retrying SMSD, or one restarted moments ago with nothing logged since,
+# must not read as healthy just because no error line has appeared yet.
+_CONNECTION_SUCCESS_MARKERS = (
+    "SMS sent on device",
+    "Written message",
+    "Received message",
+)
 
 
 class GammuBackend:
@@ -225,9 +234,19 @@ class GammuBackend:
 
         Scans the tail of the log for the most recent connection attempt
         ("Starting phone communication...", logged before every attempt,
-        successful or not) and checks whether a fatal connection-error line
-        follows it. A configured but missing/stale log is unhealthy: otherwise
-        a stopped SMSD service or unplugged modem can remain online forever."""
+        successful or not) and requires positive evidence -- a send/receive
+        success line -- after it, with no fatal connection-error line in
+        between. Absence of an error is not enough: a stuck, endlessly
+        retrying SMSD (or one just restarted, with nothing logged yet) must
+        not read as healthy by default. A configured but missing/stale log
+        is unhealthy: otherwise a stopped SMSD service or unplugged modem can
+        remain online forever.
+
+        The registry-based port check is used only as a fast-fail: for USB
+        serial adapters, Windows can leave the port listed in SERIALCOMM for
+        a while after the device is unplugged or powered off, so a `True`/`None`
+        result here is not trusted as proof of reachability -- only an
+        explicit `False` short-circuits."""
         port_present = self._configured_serial_port_present()
         if port_present is False:
             return False
@@ -257,11 +276,16 @@ class GammuBackend:
             if _CONNECTION_ATTEMPT_MARKER in lines[index]:
                 last_attempt_index = index
                 break
-        relevant_lines = lines[last_attempt_index:] if last_attempt_index is not None else lines
-        for line in relevant_lines:
+        if last_attempt_index is None:
+            return False
+
+        saw_success = False
+        for line in lines[last_attempt_index:]:
             if any(marker in line for marker in _CONNECTION_ERROR_MARKERS):
                 return False
-        return True
+            if any(marker in line for marker in _CONNECTION_SUCCESS_MARKERS):
+                saw_success = True
+        return saw_success
 
     def simulate_send_once(self, *, limit: int = 50) -> int:
         """

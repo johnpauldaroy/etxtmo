@@ -109,6 +109,32 @@ def test_is_modem_reachable_false_when_smsd_log_is_stale(tmp_path: Path):
         backend.close()
 
 
+def test_is_modem_reachable_false_when_no_success_since_last_attempt(tmp_path: Path):
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text("Starting phone communication...\n", encoding="utf-8")
+    backend = make_backend(tmp_path, smsd_log_path=str(log_path))
+    try:
+        assert backend.is_modem_reachable() is False
+    finally:
+        backend.close()
+
+
+def test_is_modem_reachable_false_when_stuck_retrying_without_success(tmp_path: Path):
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text(
+        "Starting phone communication...\n"
+        "Some transient status line\n"
+        "Starting phone communication...\n"
+        "Another transient status line\n",
+        encoding="utf-8",
+    )
+    backend = make_backend(tmp_path, smsd_log_path=str(log_path))
+    try:
+        assert backend.is_modem_reachable() is False
+    finally:
+        backend.close()
+
+
 def test_is_modem_reachable_false_after_speed_or_write_error(tmp_path: Path):
     for error in ("Error setting device speed", "Error writing to the device"):
         log_path = tmp_path / "smsd.log"
