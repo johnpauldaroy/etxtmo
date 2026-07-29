@@ -1,0 +1,21 @@
+Install Python 3.12 and Gammu
+Run this setupbranch file 
+
+Invoke-WebRequest -Uri "https://etxtmo.barbazampc.cloud/downloads/branch-agent.zip" -OutFile branch-agent.zip
+Expand-Archive -Path branch-agent.zip -DestinationPath C:\etxtmo-branch-agent -Force
+cd C:\etxtmo-branch-agent\scripts
+.\onboard-branch.ps1 -BranchCode 009 -AgentApiUsername branch-agent-009
+
+
+
+winget install --exact --id Python.Python.3.12 --scope machine --accept-package-agreements --accept-source-agreements
+
+$env:Path = "C:\Program Files\Python312;C:\Program Files\Python312\Scripts;$env:Path"
+python --version
+
+cd C:\etxtmo-branch-agent\scripts
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\onboard-branch.ps1 -BranchCode 009 -AgentApiUsername branch-agent-009
+
+
+

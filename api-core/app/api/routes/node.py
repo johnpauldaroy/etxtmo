@@ -31,7 +31,7 @@ from app.schemas import (
     QueueResultRequest,
 )
 from app.services.audit import record_audit_event
-from app.services.queue import apply_queue_results, pull_pending_queue_items
+from app.services.queue import apply_queue_results, effective_modem_status, pull_pending_queue_items
 
 router = APIRouter(prefix="/node", tags=["node"])
 
@@ -131,6 +131,11 @@ def pull_jobs(
     modem = db.get(Modem, payload.modem_id)
     if modem is None or modem.branch_id != payload.branch_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Modem does not belong to this branch")
+    # Defense in depth for older agents: an unhealthy execution modem must
+    # never claim local or failover work. A healthy backup agent will claim
+    # eligible pending messages through pull_pending_queue_items instead.
+    if effective_modem_status(modem) != ModemStatus.online:
+        return []
     rows = pull_pending_queue_items(
         db,
         execution_branch_id=payload.branch_id,

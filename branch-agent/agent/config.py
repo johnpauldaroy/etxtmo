@@ -28,3 +28,4 @@ class AgentSettings(BaseSettings):
     simulate_send_batch_size: int = Field(default=50, alias="SIMULATE_SEND_BATCH_SIZE")
     smsd_log_path: str | None = Field(default=None, alias="SMSD_LOG_PATH")
     modem_check_interval_seconds: int = Field(default=60, alias="MODEM_CHECK_INTERVAL_SECONDS")
+    smsd_log_stale_after_seconds: int = Field(default=120, alias="SMSD_LOG_STALE_AFTER_SECONDS")

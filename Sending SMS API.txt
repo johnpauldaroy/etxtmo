@@ -1,0 +1,44 @@
+Sending an SMS from your external system
+Endpoint: POST https://etxtmo.barbazampc.cloud/api/v1/sms/send
+
+Headers:
+
+
+X-API-Key: txm_EFqR0K2p...   (your full key — copy it from the dashboard; only shown once at creation)
+Content-Type: application/json
+Body:
+
+
+{
+  "to": "09171234567",
+  "message": "Your OTP is 123456"
+}
+Example (curl):
+
+
+curl -X POST https://etxtmo.barbazampc.cloud/api/v1/sms/send \
+  -H "X-API-Key: txm_EFqR0K2p..." \
+  -H "Content-Type: application/json" \
+  -d '{"to":"09171234567","message":"Hello from VMS Notifications"}'
+Response (201-style JSON):
+
+
+{
+  "message_id": "a1b2c3d4-...",
+  "status": "queued",
+  "to": "09171234567"
+}
+Save message_id if you want to check delivery status later.
+
+Checking delivery status
+Endpoint: GET https://etxtmo.barbazampc.cloud/api/v1/sms/{message_id}/status
+
+
+curl https://etxtmo.barbazampc.cloud/api/v1/sms/a1b2c3d4-.../status \
+  -H "X-API-Key: txm_EFqR0K2p..."
+Returns status (pending/sending/sent/failed), attempts, error_message, sent_at.
+
+Notes
+The key you see in the table (txm_EFqR0K2p...) is truncated for display — you need the full key shown only once at creation time. If you didn't save it, you'll need to revoke this one and create a new API key.
+This key is scoped to branch 001 – Barbaza Main — any message sent with it goes out through that branch's modem.
+If the recipient has opted out (replied STOP previously), the API returns a 422 error instead of queuing.

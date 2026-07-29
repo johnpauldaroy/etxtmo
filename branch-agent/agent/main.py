@@ -25,6 +25,8 @@ class BranchAgent:
             inbox_path=settings.gammu_inbox_path,
             cursor_db_path=settings.gammu_cursor_db_path,
             smsd_log_path=settings.smsd_log_path,
+            modem_port=settings.modem_port,
+            smsd_log_stale_after_seconds=settings.smsd_log_stale_after_seconds,
         )
         self.modem_id: str | None = None
         self._last_heartbeat = 0.0
@@ -152,6 +154,11 @@ class BranchAgent:
         if processed:
             logger.info("Simulated modem sends=%s", processed)
 
+    def pull_jobs_if_modem_reachable(self) -> None:
+        if not self._modem_reachable:
+            return
+        self.pull_and_enqueue_jobs()
+
     def run_forever(self) -> None:
         self.bootstrap()
         if self.settings.simulate_send:
@@ -163,7 +170,7 @@ class BranchAgent:
             try:
                 self.refresh_modem_reachable_if_due()
                 self.heartbeat_if_due()
-                self.pull_and_enqueue_jobs()
+                self.pull_jobs_if_modem_reachable()
                 self.process_outbound_if_enabled()
                 self.push_results()
                 self.push_incoming()

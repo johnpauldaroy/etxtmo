@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,9 @@ _CONNECTION_ATTEMPT_MARKER = "Starting phone communication"
 _CONNECTION_ERROR_MARKERS = (
     "Error opening device",
     "Error at init connection",
+    "Error setting device speed",
+    "Error writing to the device",
+    "too many connection errors",
 )
 
 
@@ -43,6 +48,8 @@ class GammuBackend:
         inbox_path: str,
         cursor_db_path: str,
         smsd_log_path: str | None = None,
+        modem_port: str | None = None,
+        smsd_log_stale_after_seconds: int = 120,
     ) -> None:
         self.outbox_path = Path(outbox_path)
         self.sent_path = Path(sent_path)
@@ -52,6 +59,8 @@ class GammuBackend:
             path.mkdir(parents=True, exist_ok=True)
 
         self.smsd_log_path = Path(smsd_log_path) if smsd_log_path else None
+        self.modem_port = modem_port
+        self.smsd_log_stale_after_seconds = smsd_log_stale_after_seconds
 
         self.conn = sqlite3.connect(cursor_db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -175,6 +184,38 @@ class GammuBackend:
 
         return items
 
+    def _configured_serial_port_present(self) -> bool | None:
+        """Return whether the configured serial device exists, when the OS
+        offers a safe read-only way to check without opening SMSD's port."""
+        if not self.modem_port:
+            return None
+
+        expected = self.modem_port.rstrip(":").upper()
+        if os.name == "nt":
+            try:
+                import winreg
+
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"HARDWARE\DEVICEMAP\SERIALCOMM",
+                ) as key:
+                    index = 0
+                    ports: set[str] = set()
+                    while True:
+                        try:
+                            _, value, _ = winreg.EnumValue(key, index)
+                        except OSError:
+                            break
+                        ports.add(str(value).rstrip(":").upper())
+                        index += 1
+                return expected in ports
+            except OSError:
+                return False
+
+        if self.modem_port.startswith("/"):
+            return Path(self.modem_port).exists()
+        return None
+
     def is_modem_reachable(self, *, tail_bytes: int = 8192) -> bool:
         """Infer modem connectivity from gammu-smsd's own log instead of
         probing the port ourselves -- gammu-smsd holds the COM port
@@ -184,21 +225,31 @@ class GammuBackend:
 
         Scans the tail of the log for the most recent connection attempt
         ("Starting phone communication...", logged before every attempt,
-        successful or not) and checks whether a connection-error line
-        immediately follows it. Returns True (assume reachable) if no
-        smsd_log_path is configured or the log doesn't exist yet, so
-        branch PCs that haven't set this up keep prior behavior."""
-        if not self.smsd_log_path or not self.smsd_log_path.exists():
+        successful or not) and checks whether a fatal connection-error line
+        follows it. A configured but missing/stale log is unhealthy: otherwise
+        a stopped SMSD service or unplugged modem can remain online forever."""
+        port_present = self._configured_serial_port_present()
+        if port_present is False:
+            return False
+
+        if not self.smsd_log_path:
             return True
+        if not self.smsd_log_path.exists():
+            return False
 
         try:
+            if (
+                self.smsd_log_stale_after_seconds > 0
+                and time.time() - self.smsd_log_path.stat().st_mtime > self.smsd_log_stale_after_seconds
+            ):
+                return False
             with self.smsd_log_path.open("rb") as handle:
                 handle.seek(0, 2)
                 size = handle.tell()
                 handle.seek(max(0, size - tail_bytes))
                 tail = handle.read().decode("utf-8", errors="replace")
         except OSError:
-            return True
+            return False
 
         lines = tail.splitlines()
         last_attempt_index = None
@@ -206,10 +257,8 @@ class GammuBackend:
             if _CONNECTION_ATTEMPT_MARKER in lines[index]:
                 last_attempt_index = index
                 break
-        if last_attempt_index is None:
-            return True
-
-        for line in lines[last_attempt_index:]:
+        relevant_lines = lines[last_attempt_index:] if last_attempt_index is not None else lines
+        for line in relevant_lines:
             if any(marker in line for marker in _CONNECTION_ERROR_MARKERS):
                 return False
         return True

@@ -18,6 +18,8 @@ from app.models import (
     QueueStatus,
     RecipientStatus,
 )
+from app.api.routes.node import pull_jobs
+from app.schemas import QueuePullRequest
 from app.services.queue import apply_queue_results, pull_pending_queue_items
 
 
@@ -154,3 +156,30 @@ def test_healthy_source_modem_prevents_backup_claim(db_session, seeded_access):
         limit=10,
     )
     assert jobs == []
+
+
+def test_unhealthy_execution_modem_cannot_claim_pending_jobs(db_session, seeded_access):
+    source = seeded_access["branch_a"]
+    user = seeded_access["user"]
+    source_modem = Modem(
+        id=uuid.uuid4(),
+        branch_id=source.id,
+        node_name="source-node",
+        name="Broken source modem",
+        status=ModemStatus.error,
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    item = _queued_message(db_session, source, user)
+    db_session.add(source_modem)
+    db_session.commit()
+
+    jobs = pull_jobs(
+        QueuePullRequest(branch_id=source.id, modem_id=source_modem.id, limit=10),
+        db_session,
+        user,
+    )
+
+    db_session.refresh(item)
+    assert jobs == []
+    assert item.status == QueueStatus.pending
+    assert item.modem_id is None

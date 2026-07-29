@@ -21,6 +21,11 @@ cannot request another branch's work directly.
 ## Delivery safety
 
 - A queue item is atomically claimed by one modem.
+- An unhealthy modem cannot claim new work. Pending messages become available to the
+  first healthy configured backup after the failover delay.
+- Branch agents mark a modem unhealthy when its configured serial port disappears, its
+  SMSD log becomes stale, or Gammu reports a fatal open, initialization, speed, or
+  write error.
 - Delivery results are accepted only from the modem that claimed the item.
 - Failed attempts release their modem assignment so routing is recalculated.
 - Stale `sending` items are never automatically resent. Use **Review stale deliveries**

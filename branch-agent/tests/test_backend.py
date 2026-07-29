@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
 import sys
+import time
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -51,10 +53,10 @@ def test_is_modem_reachable_defaults_true_without_smsd_log_path(tmp_path: Path):
         backend.close()
 
 
-def test_is_modem_reachable_true_when_log_missing(tmp_path: Path):
+def test_is_modem_reachable_false_when_configured_log_missing(tmp_path: Path):
     backend = make_backend(tmp_path, smsd_log_path=str(tmp_path / "smsd.log"))
     try:
-        assert backend.is_modem_reachable() is True
+        assert backend.is_modem_reachable() is False
     finally:
         backend.close()
 
@@ -91,7 +93,42 @@ def test_is_modem_reachable_true_after_successful_send(tmp_path: Path):
         backend.close()
 
 
-def make_backend(tmp_path: Path, *, smsd_log_path: str | None = None) -> GammuBackend:
+def test_is_modem_reachable_false_when_smsd_log_is_stale(tmp_path: Path):
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text("Starting phone communication...\n", encoding="utf-8")
+    old = time.time() - 300
+    os.utime(log_path, (old, old))
+    backend = make_backend(
+        tmp_path,
+        smsd_log_path=str(log_path),
+        smsd_log_stale_after_seconds=120,
+    )
+    try:
+        assert backend.is_modem_reachable() is False
+    finally:
+        backend.close()
+
+
+def test_is_modem_reachable_false_after_speed_or_write_error(tmp_path: Path):
+    for error in ("Error setting device speed", "Error writing to the device"):
+        log_path = tmp_path / "smsd.log"
+        log_path.write_text(
+            f"Starting phone communication...\n{error}\n",
+            encoding="utf-8",
+        )
+        backend = make_backend(tmp_path, smsd_log_path=str(log_path))
+        try:
+            assert backend.is_modem_reachable() is False
+        finally:
+            backend.close()
+
+
+def make_backend(
+    tmp_path: Path,
+    *,
+    smsd_log_path: str | None = None,
+    smsd_log_stale_after_seconds: int = 120,
+) -> GammuBackend:
     return GammuBackend(
         outbox_path=str(tmp_path / "outbox"),
         sent_path=str(tmp_path / "sent"),
@@ -99,4 +136,5 @@ def make_backend(tmp_path: Path, *, smsd_log_path: str | None = None) -> GammuBa
         inbox_path=str(tmp_path / "inbox"),
         cursor_db_path=str(tmp_path / "cursor.sqlite"),
         smsd_log_path=smsd_log_path,
+        smsd_log_stale_after_seconds=smsd_log_stale_after_seconds,
     )

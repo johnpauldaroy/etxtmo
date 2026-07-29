@@ -208,7 +208,7 @@ $gammurcPath = Join-Path $brandDir "gammurc"
 $gammurcContent = @"
 [gammu]
 device = $ComPort
-connection = at$BaudRate
+connection = at
 "@
 Set-ContentNoBom -Path $gammurcPath -Content $gammurcContent
 
@@ -223,7 +223,7 @@ $smsdrcPath = Join-Path $brandDir "smsdrc"
 $smsdrcContent = @"
 [gammu]
 device = $ComPort
-connection = at$BaudRate
+connection = at
 
 [smsd]
 service = files
@@ -276,6 +276,7 @@ GAMMU_INBOX_PATH=$spoolRoot\inbox
 GAMMU_CURSOR_DB_PATH=$brandDir\agent-cursor.sqlite
 SMSD_LOG_PATH=$smsdLogPath
 MODEM_CHECK_INTERVAL_SECONDS=60
+SMSD_LOG_STALE_AFTER_SECONDS=120
 "@
 Set-ContentNoBom -Path $envPath -Content $envContent
 

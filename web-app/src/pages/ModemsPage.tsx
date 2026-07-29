@@ -143,7 +143,10 @@ export function ModemsPage({
     try {
       const result = await apiRequest<{ recovered: number }>(`/api/failover/${selectedBranch}/recover-stale`, "POST", {}, token);
       await onRefresh();
-      setNotice(`${result.recovered} stale delivery ${result.recovered === 1 ? "was" : "were"} moved to failed for review.`);
+      setNotice(
+        `${result.recovered} stale delivery ${result.recovered === 1 ? "was" : "were"} moved to failed. ` +
+        "Review and retry failed recipients in Message Queue; the healthy backup will claim them automatically.",
+      );
     } catch (error) {
       setNotice((error as Error).message);
     } finally {
@@ -246,8 +249,10 @@ export function ModemsPage({
             <Button disabled={!isSuperuser || busy} onClick={() => void savePolicy()}><Save className="h-4 w-4" />Save policy</Button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-sm text-amber-900">Stale deliveries are marked for manual review, never automatically resent, to prevent duplicate SMS.</p>
-            <Button variant="outline" size="sm" disabled={!isSuperuser || busy} onClick={() => void recoverStale()}>Review stale deliveries</Button>
+            <p className="text-sm text-amber-900">
+              Pending messages fail over automatically. Deliveries already claimed by an unhealthy modem require manual review before retry to prevent duplicate SMS.
+            </p>
+            <Button variant="outline" size="sm" disabled={!isSuperuser || busy} onClick={() => void recoverStale()}>Review stuck deliveries</Button>
           </div>
 
           <div className="border-t pt-5">
