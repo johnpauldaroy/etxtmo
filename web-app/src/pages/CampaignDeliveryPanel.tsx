@@ -36,6 +36,8 @@ const readableStatus = (status: string) => {
   return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
+const canReassign = (status: string) => ["queued", "pending", "failed", "error"].includes(status.toLowerCase());
+
 function aggregateApiStatus(statuses: string[]): string {
   if (statuses.every((status) => status === "sent")) return "sent";
   if (statuses.every((status) => status === "failed")) return "failed";
@@ -245,7 +247,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                   <TableCell>{formatDate(delivery.created_at)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {isSuperuser && delivery.kind === "campaign" && (
+                      {isSuperuser && delivery.kind === "campaign" && canReassign(delivery.status) && (
                         <Button
                           type="button"
                           size="sm"
