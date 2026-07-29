@@ -284,6 +284,10 @@ class MessageQueue(Base, TimestampMixin):
     modem_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("modems.id"), nullable=True)
     execution_branch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("branches.id"), nullable=True)
     failover_route_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("failover_routes.id"), nullable=True)
+    # Superadmin manual override: when set, this branch's agents may claim the
+    # item even though branch_id (true campaign ownership) points elsewhere,
+    # bypassing the automatic failover-route/delay eligibility checks.
+    forced_execution_branch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("branches.id"), nullable=True)
     status: Mapped[QueueStatus] = mapped_column(
         Enum(QueueStatus, name="queue_status"),
         default=QueueStatus.pending,

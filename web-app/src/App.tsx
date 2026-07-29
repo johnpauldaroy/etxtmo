@@ -233,6 +233,8 @@ export function App() {
             campaigns={branchData.campaigns}
             token={auth.token}
             branchId={branchData.selectedBranch}
+            branches={branchData.branches}
+            isSuperuser={isSuperuser}
             refreshCampaigns={branchData.refreshCampaigns}
           />
         );

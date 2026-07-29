@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import assert_branch_access, get_current_user
 from app.models import (
+    ApiKey,
     Campaign,
     Contact,
     ContactGroup,
@@ -30,6 +31,31 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 MAX_BATCH_ROWS = 10_000
 
 
+def _api_key_id_from_campaign(campaign: Campaign) -> uuid.UUID | None:
+    metadata = campaign.metadata_json or {}
+    if metadata.get("source") != "sms_gateway_api" or not metadata.get("api_key_id"):
+        return None
+    try:
+        return uuid.UUID(str(metadata["api_key_id"]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _campaign_out(campaign: Campaign, api_key_labels: dict[uuid.UUID, str] | None = None) -> CampaignOut:
+    metadata = campaign.metadata_json or {}
+    api_key_id = _api_key_id_from_campaign(campaign)
+    label = metadata.get("api_key_label")
+    if api_key_id and api_key_labels and api_key_id in api_key_labels:
+        label = api_key_labels[api_key_id]
+    return CampaignOut.model_validate(campaign).model_copy(
+        update={
+            "source": metadata.get("source"),
+            "api_key_id": api_key_id,
+            "api_key_label": str(label) if label else None,
+        },
+    )
+
+
 @router.get("", response_model=list[CampaignOut])
 def list_campaigns(
     branch_id: uuid.UUID = Query(...),
@@ -37,10 +63,80 @@ def list_campaigns(
     current_user: User = Depends(get_current_user),
 ) -> list[CampaignOut]:
     assert_branch_access(db, current_user, branch_id)
-    rows = db.execute(
+    rows = list(db.execute(
         select(Campaign).where(Campaign.branch_id == branch_id).order_by(Campaign.created_at.desc()),
-    ).scalars()
-    return [CampaignOut.model_validate(row) for row in rows]
+    ).scalars())
+    api_key_ids = {api_key_id for row in rows if (api_key_id := _api_key_id_from_campaign(row))}
+    api_key_labels = dict(
+        db.execute(select(ApiKey.id, ApiKey.label).where(ApiKey.id.in_(api_key_ids))).all(),
+    ) if api_key_ids else {}
+    return [_campaign_out(row, api_key_labels) for row in rows]
+
+
+@router.get("/api-keys/{api_key_id}/recipients")
+def list_api_key_recipients(
+    api_key_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    assert_branch_access(db, current_user, branch_id)
+    campaigns = [
+        campaign
+        for campaign in db.execute(
+            select(Campaign)
+            .where(Campaign.branch_id == branch_id)
+            .order_by(Campaign.created_at.desc()),
+        ).scalars()
+        if _api_key_id_from_campaign(campaign) == api_key_id
+    ]
+    if not campaigns:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No API messages found for this key")
+
+    campaign_ids = [campaign.id for campaign in campaigns]
+    campaign_created_at = {campaign.id: campaign.created_at for campaign in campaigns}
+    rows = db.execute(
+        select(CampaignRecipient, Contact, MessageQueue)
+        .outerjoin(Contact, Contact.id == CampaignRecipient.contact_id)
+        .outerjoin(MessageQueue, MessageQueue.campaign_recipient_id == CampaignRecipient.id)
+        .where(CampaignRecipient.campaign_id.in_(campaign_ids))
+        .order_by(CampaignRecipient.created_at.desc()),
+    ).all()
+    queue_ids = [queue.id for _, _, queue in rows if queue]
+    sent_at_by_queue = dict(
+        db.execute(
+            select(MessageLog.queue_id, func.max(MessageLog.created_at))
+            .where(MessageLog.queue_id.in_(queue_ids), MessageLog.event_status == "sent")
+            .group_by(MessageLog.queue_id),
+        ).all(),
+    ) if queue_ids else {}
+
+    api_key = db.get(ApiKey, api_key_id)
+    snapshot_label = (campaigns[0].metadata_json or {}).get("api_key_label")
+    return {
+        "api_key_id": str(api_key_id),
+        "api_key_label": api_key.label if api_key and api_key.branch_id == branch_id else snapshot_label,
+        "items": [
+            {
+                "id": str(recipient.id),
+                "campaign_id": str(recipient.campaign_id),
+                "queue_id": str(queue.id) if queue else None,
+                "contact_name": (
+                    " ".join(part for part in ((contact.first_name or "").strip(), (contact.last_name or "").strip()) if part)
+                    if contact
+                    else ""
+                ),
+                "phone_number": recipient.phone_number,
+                "message_body": recipient.message_body,
+                "status": queue.status.value if queue else recipient.status.value,
+                "attempts": queue.attempts if queue else 0,
+                "created_at": campaign_created_at[recipient.campaign_id].isoformat(),
+                "sent_at": sent_at_by_queue.get(queue.id).isoformat() if queue and sent_at_by_queue.get(queue.id) else None,
+                "error_message": queue.error_message if queue else None,
+            }
+            for recipient, contact, queue in rows
+        ],
+    }
 
 
 @router.post("", response_model=CampaignOut)
@@ -84,7 +180,7 @@ def create_campaign(
     )
     db.commit()
     db.refresh(campaign)
-    return CampaignOut.model_validate(campaign)
+    return _campaign_out(campaign)
 
 
 @router.post("/batch-upload")
@@ -312,6 +408,7 @@ def list_campaign_recipients(
                 "message_body": recipient.message_body,
                 "status": queue.status.value if queue else recipient.status.value,
                 "attempts": queue.attempts if queue else 0,
+                "created_at": recipient.created_at.isoformat(),
                 "sent_at": sent_at_by_queue.get(queue.id).isoformat() if queue and sent_at_by_queue.get(queue.id) else None,
                 "error_message": queue.error_message if queue else None,
             }

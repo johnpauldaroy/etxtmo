@@ -197,6 +197,9 @@ class CampaignOut(BaseModel):
     scheduled_at: datetime | None
     timezone: str
     created_at: datetime
+    source: str | None = None
+    api_key_id: uuid.UUID | None = None
+    api_key_label: str | None = None
 
 
 class CampaignStatusUpdate(BaseModel):
@@ -297,10 +300,15 @@ class QueueItemOut(BaseModel):
     modem_id: uuid.UUID | None = None
     execution_branch_id: uuid.UUID | None = None
     failover_route_id: uuid.UUID | None = None
+    forced_execution_branch_id: uuid.UUID | None = None
     phone_number: str | None = None
     message_body: str | None = None
     campaign_name: str = ""
     sent_at: datetime | None = None
+
+
+class QueueReassignBranchRequest(BaseModel):
+    target_branch_id: uuid.UUID
 
 
 class IncomingMessageCreate(BaseModel):

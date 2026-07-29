@@ -38,7 +38,11 @@ def send_sms(
         name=f"API send to {phone_number}",
         status=CampaignStatus.approved,
         timezone=branch.timezone,
-        metadata_json={"source": "sms_gateway_api", "api_key_id": str(api_key.id)},
+        metadata_json={
+            "source": "sms_gateway_api",
+            "api_key_id": str(api_key.id),
+            "api_key_label": api_key.label,
+        },
     )
     db.add(campaign)
     db.flush()

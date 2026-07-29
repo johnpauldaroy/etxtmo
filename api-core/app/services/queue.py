@@ -249,6 +249,26 @@ def pull_pending_queue_items(
     candidates.extend((row, None) for row in db.execute(local_stmt).scalars().all())
 
     remaining = max(0, limit - len(candidates))
+    if remaining:
+        # Superadmin manually reassigned these to this branch -- claim them
+        # immediately regardless of branch_id/failover eligibility, same as a
+        # local claim (no route, no failover delay).
+        forced_stmt = (
+            select(MessageQueue)
+            .where(
+                MessageQueue.forced_execution_branch_id == execution_branch_id,
+                MessageQueue.branch_id != execution_branch_id,
+                MessageQueue.status == QueueStatus.pending,
+                MessageQueue.next_attempt_at <= now_utc(),
+                MessageQueue.modem_id.is_(None),
+            )
+            .order_by(MessageQueue.created_at.asc())
+            .limit(remaining)
+            .with_for_update(skip_locked=True)
+        )
+        forced_rows = db.execute(forced_stmt).scalars().all()
+        candidates.extend((row, None) for row in forced_rows)
+        remaining -= len(forced_rows)
     if remaining and modem_id is not None:
         for source_branch_id, route_id, delay_seconds in _eligible_failover_sources(
             db,
@@ -290,6 +310,7 @@ def pull_pending_queue_items(
                 modem_id=modem_id,
                 execution_branch_id=execution_branch_id,
                 failover_route_id=route_id,
+                forced_execution_branch_id=None,
             )
             .execution_options(synchronize_session=False),
         )

@@ -6,9 +6,10 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.routes.admin import create_api_key, revoke_api_key
+from app.api.routes.campaigns import list_api_key_recipients, list_campaigns
 from app.api.routes.sms import get_sms_status, send_sms
 from app.core.deps import get_api_key_context
-from app.models import Contact, OptOut, OptOutSource
+from app.models import Campaign, Contact, OptOut, OptOutSource
 from app.schemas import ApiKeyCreate, SmsSendRequest
 
 
@@ -34,10 +35,34 @@ def test_send_sms_queues_message_and_status_reflects_it(db_session, seeded_acces
 
     assert response.status == "queued"
     assert response.to == "+639991112222"
+    campaign = db_session.get(Campaign, response.message_id)
+    assert campaign.metadata_json["api_key_label"] == "Test key"
 
     status_response = get_sms_status(response.message_id, db_session, api_key)
     assert status_response.to == "+639991112222"
     assert status_response.status in {"pending", "sending", "sent"}
+
+
+def test_api_sends_are_labeled_and_listed_as_one_key_history(db_session, seeded_access):
+    branch = seeded_access["branch_a"]
+    user = seeded_access["user"]
+    created = _issue_key(db_session, seeded_access, label="POS gateway")
+    api_key = get_api_key_context(db_session, created.api_key)
+
+    send_sms(SmsSendRequest(to="+639111111111", message="First"), db_session, api_key)
+    send_sms(SmsSendRequest(to="+639222222222", message="Second"), db_session, api_key)
+    db_session.commit()
+
+    campaigns = list_campaigns(branch.id, db_session, user)
+    api_campaigns = [campaign for campaign in campaigns if campaign.source == "sms_gateway_api"]
+    assert len(api_campaigns) == 2
+    assert {campaign.api_key_id for campaign in api_campaigns} == {api_key.id}
+    assert {campaign.api_key_label for campaign in api_campaigns} == {"POS gateway"}
+
+    history = list_api_key_recipients(api_key.id, branch.id, db_session, user)
+    assert history["api_key_label"] == "POS gateway"
+    assert {item["phone_number"] for item in history["items"]} == {"+639111111111", "+639222222222"}
+    assert all(item["campaign_id"] for item in history["items"])
 
 
 def test_get_api_key_context_rejects_missing_and_invalid_keys(db_session, seeded_access):

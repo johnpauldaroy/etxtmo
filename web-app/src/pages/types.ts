@@ -22,7 +22,17 @@ export type ContactGroup = {
 };
 export type ContactGroupDetail = ContactGroup & { members: Contact[] };
 export type Template = { id: string; name: string; body: string; is_official: boolean };
-export type Campaign = { id: string; name: string; status: string; created_at: string; scheduled_at?: string | null };
+export type Campaign = {
+  id: string;
+  branch_id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  scheduled_at?: string | null;
+  source?: string | null;
+  api_key_id?: string | null;
+  api_key_label?: string | null;
+};
 export type CampaignBatchUploadResult = {
   campaign_id: string;
   status: string;
@@ -33,12 +43,14 @@ export type CampaignBatchUploadResult = {
 export type CampaignSubmitResult = { status: string; recipients: number; queued: number };
 export type CampaignRecipientDetail = {
   id: string;
+  campaign_id?: string;
   queue_id: string | null;
   contact_name: string;
   phone_number: string;
   message_body: string;
   status: string;
   attempts: number;
+  created_at?: string | null;
   sent_at?: string | null;
   error_message?: string | null;
 };

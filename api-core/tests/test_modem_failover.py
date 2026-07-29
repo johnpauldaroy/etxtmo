@@ -19,7 +19,8 @@ from app.models import (
     RecipientStatus,
 )
 from app.api.routes.node import pull_jobs
-from app.schemas import QueuePullRequest
+from app.api.routes.queue import reassign_campaign_branch
+from app.schemas import QueuePullRequest, QueueReassignBranchRequest
 from app.services.queue import apply_queue_results, pull_pending_queue_items
 
 
@@ -183,3 +184,72 @@ def test_unhealthy_execution_modem_cannot_claim_pending_jobs(db_session, seeded_
     assert jobs == []
     assert item.status == QueueStatus.pending
     assert item.modem_id is None
+
+
+def test_superadmin_reassign_routes_to_target_branch_modem(db_session, seeded_access):
+    source = seeded_access["branch_a"]
+    target = seeded_access["branch_b"]
+    superuser = seeded_access["superuser"]
+    user = seeded_access["user"]
+    target_modem = Modem(
+        id=uuid.uuid4(),
+        branch_id=target.id,
+        node_name="target-node",
+        name="Target Wavecom",
+        status=ModemStatus.online,
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    item = _queued_message(db_session, source, user)
+    db_session.add(target_modem)
+    db_session.commit()
+
+    result = reassign_campaign_branch(
+        item.campaign_id,
+        QueueReassignBranchRequest(target_branch_id=target.id),
+        db_session,
+        superuser,
+    )
+    assert result == {"reassigned": 1}
+
+    db_session.refresh(item)
+    assert item.status == QueueStatus.pending
+    assert item.branch_id == source.id
+    assert item.forced_execution_branch_id == target.id
+
+    jobs = pull_pending_queue_items(
+        db_session,
+        execution_branch_id=target.id,
+        modem_id=target_modem.id,
+        limit=10,
+    )
+    assert [job.id for job in jobs] == [item.id]
+    assert jobs[0].execution_branch_id == target.id
+    assert jobs[0].modem_id == target_modem.id
+    assert jobs[0].forced_execution_branch_id is None
+
+    assert pull_pending_queue_items(
+        db_session,
+        execution_branch_id=source.id,
+        modem_id=None,
+        limit=10,
+    ) == []
+
+
+def test_reassign_rejects_same_branch(db_session, seeded_access):
+    import pytest
+    from fastapi import HTTPException
+
+    source = seeded_access["branch_a"]
+    superuser = seeded_access["superuser"]
+    user = seeded_access["user"]
+    item = _queued_message(db_session, source, user)
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        reassign_campaign_branch(
+            item.campaign_id,
+            QueueReassignBranchRequest(target_branch_id=source.id),
+            db_session,
+            superuser,
+        )
+    assert exc_info.value.status_code == 400
