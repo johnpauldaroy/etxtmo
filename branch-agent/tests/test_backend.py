@@ -150,6 +150,42 @@ def test_is_modem_reachable_true_after_clean_status_poll_without_send(tmp_path: 
         backend.close()
 
 
+def test_is_modem_reachable_true_when_new_reconnect_attempt_has_no_outcome_yet(tmp_path: Path):
+    # Regression test: SMSD reconnects periodically even while healthy. If the
+    # most recent "Starting phone communication..." line hasn't logged an
+    # outcome yet (the agent's check happened to sample the log mid-cycle),
+    # the prior cycle's success must still count -- not reset to unreachable.
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text(
+        "Starting phone communication...\n"
+        "SMS status received\n"
+        "Network name received\n"
+        "Starting phone communication...\n",
+        encoding="utf-8",
+    )
+    backend = make_backend(tmp_path, smsd_log_path=str(log_path))
+    try:
+        assert backend.is_modem_reachable() is True
+    finally:
+        backend.close()
+
+
+def test_is_modem_reachable_false_when_error_follows_prior_success(tmp_path: Path):
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text(
+        "Starting phone communication...\n"
+        "SMS sent on device: \"COM11\" status=0, reference=63\n"
+        "Starting phone communication...\n"
+        "Error at init connection: Error opening device, it doesn't exist. (DEVICENOTEXIST[4])\n",
+        encoding="utf-8",
+    )
+    backend = make_backend(tmp_path, smsd_log_path=str(log_path))
+    try:
+        assert backend.is_modem_reachable() is False
+    finally:
+        backend.close()
+
+
 def test_is_modem_reachable_false_after_speed_or_write_error(tmp_path: Path):
     for error in ("Error setting device speed", "Error writing to the device"):
         log_path = tmp_path / "smsd.log"

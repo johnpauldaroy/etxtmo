@@ -13,13 +13,10 @@ _IN_PATTERN = re.compile(
     r"^IN(?P<date>\d{8})_(?P<time>\d{6})_(?P<serial>\d+)_(?P<sender>.+)_(?P<sequence>\d+)\.\w+$",
 )
 
-# gammu-smsd logs this when it can't open the modem's serial port at all
+# gammu-smsd logs these when it can't open the modem's serial port at all
 # (unplugged, wrong port, driver gone) -- distinct from transient send/status
 # errors ("Error getting SMS status", timeouts) that can happen even with a
-# healthy connection. "Starting phone communication..." precedes *every*
-# connection attempt (successful or not), so it can't be used as a recovery
-# signal on its own -- only whether a connection-error line follows it.
-_CONNECTION_ATTEMPT_MARKER = "Starting phone communication"
+# healthy connection.
 _CONNECTION_ERROR_MARKERS = (
     "Error opening device",
     "Error at init connection",
@@ -243,14 +240,24 @@ class GammuBackend:
         (e.g. `gammu identify`) always fails with "already opened by
         another app" regardless of whether the modem itself is reachable.
 
-        Scans the tail of the log for the most recent connection attempt
-        ("Starting phone communication...", logged before every attempt,
-        successful or not) and requires positive evidence -- a send/receive
-        success line -- after it, with no fatal connection-error line in
-        between. Absence of an error is not enough: a stuck, endlessly
-        retrying SMSD (or one just restarted, with nothing logged yet) must
-        not read as healthy by default. A configured but missing/stale log
-        is unhealthy: otherwise a stopped SMSD service or unplugged modem can
+        Finds whichever came last in the log tail: a fatal connection error,
+        or evidence the modem answered (an actual send/receive, or a clean
+        status/network poll). Whichever is more recent wins. This is
+        deliberately NOT anchored to only the lines after the latest
+        "Starting phone communication..." marker: SMSD reconnects
+        periodically even while healthy, and if the agent's periodic check
+        happens to sample the log right as a fresh reconnect attempt is
+        logged but before its outcome is, anchoring to "since last attempt"
+        would see no evidence yet and wrongly report unreachable -- even
+        though the previous cycle just proved the modem fine. Only an
+        actual error occurring after the last known-good evidence should
+        flip this to unreachable.
+
+        Absence of any evidence at all (never attempted, or nothing logged
+        since a stale mark) is not enough to call it healthy -- a stuck,
+        endlessly retrying SMSD, or one just restarted, must not read as
+        healthy by default. A configured but missing/stale log is
+        unhealthy: otherwise a stopped SMSD service or unplugged modem can
         remain online forever.
 
         The registry-based port check is used only as a fast-fail: for USB
@@ -282,24 +289,23 @@ class GammuBackend:
             return False
 
         lines = tail.splitlines()
-        last_attempt_index = None
-        for index in range(len(lines) - 1, -1, -1):
-            if _CONNECTION_ATTEMPT_MARKER in lines[index]:
-                last_attempt_index = index
-                break
-        if last_attempt_index is None:
-            return False
+        last_good_index = None
+        for index, line in enumerate(lines):
+            if any(marker in line for marker in _CONNECTION_SUCCESS_MARKERS) or any(
+                marker in line for marker in _CONNECTION_HEALTHY_POLL_MARKERS
+            ):
+                last_good_index = index
 
-        saw_success = False
-        saw_healthy_poll = False
-        for line in lines[last_attempt_index:]:
+        last_error_index = None
+        for index, line in enumerate(lines):
             if any(marker in line for marker in _CONNECTION_ERROR_MARKERS):
-                return False
-            if any(marker in line for marker in _CONNECTION_SUCCESS_MARKERS):
-                saw_success = True
-            if any(marker in line for marker in _CONNECTION_HEALTHY_POLL_MARKERS):
-                saw_healthy_poll = True
-        return saw_success or saw_healthy_poll
+                last_error_index = index
+
+        if last_good_index is None:
+            return False
+        if last_error_index is None:
+            return True
+        return last_good_index > last_error_index
 
     def simulate_send_once(self, *, limit: int = 50) -> int:
         """
