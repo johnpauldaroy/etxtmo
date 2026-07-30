@@ -50,6 +50,7 @@ export type CampaignRecipientDetail = {
   message_body: string;
   status: string;
   attempts: number;
+  modem_name?: string | null;
   created_at?: string | null;
   sent_at?: string | null;
   error_message?: string | null;

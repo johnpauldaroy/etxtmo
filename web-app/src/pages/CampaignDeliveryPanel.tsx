@@ -377,6 +377,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                         <TableHead>Message sent</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Attempts</TableHead>
+                        <TableHead>Modem used</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead>Sent at</TableHead>
                         <TableHead>Error</TableHead>
@@ -393,6 +394,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                             <Badge variant={mapStatusToBadge(recipient.status)}>{readableStatus(recipient.status)}</Badge>
                           </TableCell>
                           <TableCell>{recipient.attempts}</TableCell>
+                          <TableCell className="whitespace-nowrap">{recipient.modem_name || "-"}</TableCell>
                           <TableCell className="whitespace-nowrap">{formatDate(recipient.created_at ?? undefined)}</TableCell>
                           <TableCell className="whitespace-nowrap">{formatDate(recipient.sent_at ?? undefined)}</TableCell>
                           <TableCell className="max-w-64 whitespace-normal text-muted-foreground">{recipient.error_message || "-"}</TableCell>
@@ -412,7 +414,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                           </TableCell>
                         </TableRow>
                       ))}
-                      {recipientDetails.length === 0 && <EmptyRow colSpan={9} message="No recipient messages found." />}
+                      {recipientDetails.length === 0 && <EmptyRow colSpan={10} message="No recipient messages found." />}
                     </TableBody>
                   </Table>
                   <Pagination

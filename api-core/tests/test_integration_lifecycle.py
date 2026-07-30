@@ -4,7 +4,7 @@ import uuid
 
 from sqlalchemy import func, select
 
-from app.models import Campaign, CampaignStatus, Contact, MessageQueue, QueueStatus, Template
+from app.models import Campaign, CampaignStatus, Contact, MessageQueue, Modem, ModemStatus, QueueStatus, Template
 from app.api.routes.campaigns import list_campaign_recipients
 from app.api.routes.queue import list_queue
 from app.services.campaigns import move_to_submission_state
@@ -31,7 +31,13 @@ def test_campaign_lifecycle_to_sent(db_session, seeded_access):
         timezone="Asia/Manila",
         created_by=user.id,
     )
-    db_session.add_all([contact, template, campaign])
+    modem = Modem(
+        branch_id=branch.id,
+        node_name="branch-node",
+        name="Primary modem",
+        status=ModemStatus.online,
+    )
+    db_session.add_all([contact, template, campaign, modem])
     db_session.flush()
     campaign.template_id = template.id
 
@@ -44,13 +50,14 @@ def test_campaign_lifecycle_to_sent(db_session, seeded_access):
     assert next_state == CampaignStatus.approved
     assert queued == 1
 
-    jobs = pull_pending_queue_items(db_session, branch_id=branch.id, modem_id=None, limit=10)
+    jobs = pull_pending_queue_items(db_session, branch_id=branch.id, modem_id=modem.id, limit=10)
     assert len(jobs) == 1
     assert jobs[0].status == QueueStatus.sending
 
     result = apply_queue_results(
         db_session,
         branch_id=branch.id,
+        modem_id=modem.id,
         items=[{"queue_id": jobs[0].id, "status": "sent", "external_message_id": "abc123"}],
     )
     db_session.commit()
@@ -82,5 +89,6 @@ def test_campaign_lifecycle_to_sent(db_session, seeded_access):
     assert recipient_rows[0]["message_body"] == "Hello members"
     assert recipient_rows[0]["status"] == "sent"
     assert recipient_rows[0]["attempts"] == 1
+    assert recipient_rows[0]["modem_name"] == "Primary modem"
     assert recipient_rows[0]["sent_at"] is not None
     assert recipient_rows[0]["error_message"] is None

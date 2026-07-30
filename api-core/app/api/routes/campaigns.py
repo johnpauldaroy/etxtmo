@@ -18,6 +18,7 @@ from app.models import (
     CampaignRecipient,
     MessageLog,
     MessageQueue,
+    Modem,
     OptOut,
     Template,
     User,
@@ -96,13 +97,14 @@ def list_api_key_recipients(
     campaign_ids = [campaign.id for campaign in campaigns]
     campaign_created_at = {campaign.id: campaign.created_at for campaign in campaigns}
     rows = db.execute(
-        select(CampaignRecipient, Contact, MessageQueue)
+        select(CampaignRecipient, Contact, MessageQueue, Modem)
         .outerjoin(Contact, Contact.id == CampaignRecipient.contact_id)
         .outerjoin(MessageQueue, MessageQueue.campaign_recipient_id == CampaignRecipient.id)
+        .outerjoin(Modem, Modem.id == MessageQueue.modem_id)
         .where(CampaignRecipient.campaign_id.in_(campaign_ids))
         .order_by(CampaignRecipient.created_at.desc()),
     ).all()
-    queue_ids = [queue.id for _, _, queue in rows if queue]
+    queue_ids = [queue.id for _, _, queue, _ in rows if queue]
     sent_at_by_queue = dict(
         db.execute(
             select(MessageLog.queue_id, func.max(MessageLog.created_at))
@@ -130,11 +132,12 @@ def list_api_key_recipients(
                 "message_body": recipient.message_body,
                 "status": queue.status.value if queue else recipient.status.value,
                 "attempts": queue.attempts if queue else 0,
+                "modem_name": modem.name if modem else None,
                 "created_at": campaign_created_at[recipient.campaign_id].isoformat(),
                 "sent_at": sent_at_by_queue.get(queue.id).isoformat() if queue and sent_at_by_queue.get(queue.id) else None,
                 "error_message": queue.error_message if queue else None,
             }
-            for recipient, contact, queue in rows
+            for recipient, contact, queue, modem in rows
         ],
     }
 
@@ -380,13 +383,14 @@ def list_campaign_recipients(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     assert_branch_access(db, current_user, campaign.branch_id)
     rows = db.execute(
-        select(CampaignRecipient, Contact, MessageQueue)
+        select(CampaignRecipient, Contact, MessageQueue, Modem)
         .outerjoin(Contact, Contact.id == CampaignRecipient.contact_id)
         .outerjoin(MessageQueue, MessageQueue.campaign_recipient_id == CampaignRecipient.id)
+        .outerjoin(Modem, Modem.id == MessageQueue.modem_id)
         .where(CampaignRecipient.campaign_id == campaign_id)
         .order_by(CampaignRecipient.created_at.asc()),
     ).all()
-    queue_ids = [queue.id for _, _, queue in rows if queue]
+    queue_ids = [queue.id for _, _, queue, _ in rows if queue]
     sent_at_by_queue = dict(
         db.execute(
             select(MessageLog.queue_id, func.max(MessageLog.created_at))
@@ -408,10 +412,11 @@ def list_campaign_recipients(
                 "message_body": recipient.message_body,
                 "status": queue.status.value if queue else recipient.status.value,
                 "attempts": queue.attempts if queue else 0,
+                "modem_name": modem.name if modem else None,
                 "created_at": recipient.created_at.isoformat(),
                 "sent_at": sent_at_by_queue.get(queue.id).isoformat() if queue and sent_at_by_queue.get(queue.id) else None,
                 "error_message": queue.error_message if queue else None,
             }
-            for recipient, contact, queue in rows
+            for recipient, contact, queue, modem in rows
         ],
     }
