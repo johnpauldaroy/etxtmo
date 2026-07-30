@@ -333,13 +333,34 @@ if ($CreateApiUser) {
         $newUser = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/users" -ContentType "application/json" -Headers $headers -Body $userBody
         Write-Host "Created user $($newUser.username) ($($newUser.id)), assigned to branch $BranchId"
     } catch {
-        $detail = ""
+        # Gather the failure text from every place PowerShell 5.1 might put
+        # it. Reading the response stream alone is unreliable here -- by the
+        # time the catch runs, Invoke-RestMethod may already have consumed
+        # it, leaving an empty string -- but ErrorDetails.Message and the
+        # exception message still carry the API's JSON body.
+        $parts = @(
+            $_.ErrorDetails.Message
+            $_.Exception.Message
+            $_.ToString()
+        )
         if ($_.Exception.Response) {
-            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-            $detail = $reader.ReadToEnd()
-            $reader.Close()
+            try {
+                $stream = $_.Exception.Response.GetResponseStream()
+                if ($stream -and $stream.CanRead) {
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $parts += $reader.ReadToEnd()
+                    $reader.Close()
+                }
+            } catch { }
         }
-        if ($detail -match "already exists") {
+        $detail = ($parts | Where-Object { $_ }) -join ' '
+
+        $statusCode = $null
+        if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+        }
+
+        if ($detail -match "already exists" -or $statusCode -in @(400, 409)) {
             Write-Host "User $ApiUsername already exists; keeping it and continuing." -ForegroundColor Yellow
             Write-Host "  If its password differs from what you just entered, reset it in Administration -> Users." -ForegroundColor Yellow
         } else {
