@@ -13,20 +13,28 @@
          gammu-smsd processes (a leftover one holding the COM port makes
          every subsequent start fail with DEVICEBUSY).
       5. Install gammu-smsd and branch-agent as Windows services (auto-start
-         on boot), both wrapped with NSSM (downloaded automatically if
-         missing). gammu-smsd runs behind gammu-cmee-prewarm.ps1 -- see the
-         service-install section for why.
+         on boot). branch-agent is wrapped with NSSM (downloaded
+         automatically if missing), since a plain Python script cannot
+         register as a Windows service on its own; gammu-smsd registers
+         itself.
       6. Optionally create the branch's scoped API user via -CreateApiUser.
 
-    Modem quirks this handles automatically, learned from real branch
-    installs (all three produce confusing, misleading errors otherwise):
-      - "device = comN:" needs the trailing colon on Windows, or the port
-        fails to open with bogus "device speed"/"DEVICEBUSY" errors.
-      - "connection = at<baud>" pins the speed; bare "at" auto-negotiation
-        fails on some USB-to-serial adapters (e.g. Prolific PL2303).
-      - Some modems (Wavecom MULTIBAND 900E 1800) reject every SIM-touching
-        AT command until AT+CMEE=1 is sent on the connection, surfacing as
-        UNKNOWN[27] / "Error getting SMSC" / EMPTYSMSC[31].
+    Config choices worth knowing about:
+      - "device = comN:" uses the trailing colon, matching Gammu's own
+        documented Windows examples.
+      - "connection = at<baud>" pins the speed rather than letting Gammu
+        auto-negotiate. Confirmed necessary on at least one branch PC: a
+        Prolific PL2303 adapter times out entirely at 9600 but works at
+        115200.
+
+    KNOWN UNRESOLVED: on a Wavecom MULTIBAND 900E 1800 (branch 008), sends
+    fail with EMPTYSMSC[31] because the modem answers Gammu's "AT+CSCA?"
+    with "+CMS ERROR: 330 (SMSC address unknown)" -- while answering the
+    same command correctly when probed manually over raw serial, in the same
+    session where Gammu's own AT+CMEE=1 succeeded. Storage mode (CPMS
+    SM vs ME) makes no difference; an explicit "SMSC =" in smsdrc is
+    ignored. Cause not yet identified. Compare github.com/gammu/gammu#833,
+    which reports the same manual-works/Gammu-fails split on this model.
 
 .EXAMPLE
     .\setup-branch-agent.ps1 -BranchCode 003 -BranchName "Culasi Branch" `
@@ -376,69 +384,33 @@ if (-not $SkipServiceInstall) {
 
     # A plain Python process does not implement the Windows Service Control
     # API, so `sc create` cannot manage it directly (it would fail to start
-    # with error 1053). NSSM wraps any console app as a proper service --
-    # used for both services here (see the gammu-smsd note below).
+    # with error 1053). NSSM wraps any console app as a proper service.
+    # gammu-smsd registers itself (-i) and does not need NSSM.
     $nssmExe = Get-Nssm -ExplicitPath $NssmPath -InstallRoot (Join-Path $RepoRoot "infra\scripts\windows\tools")
 
     Write-Step "Removing any previous services and stray processes"
 
     # Stop/remove both services regardless of how they were registered
-    # before (gammu-smsd's own -i registration, or NSSM), then kill leftover
-    # processes. A gammu-smsd left holding the COM port makes every
-    # subsequent start fail with DEVICEBUSY, and orphans accumulate quickly
-    # across repeated setup attempts.
+    # before, then kill leftover processes. A gammu-smsd left holding the COM
+    # port makes every subsequent start fail with DEVICEBUSY, and orphans
+    # accumulate quickly across repeated setup attempts.
     foreach ($svc in @($smsdServiceName, $agentServiceName)) {
         try { Stop-Service $svc -Force -ErrorAction Stop } catch { }
         try { & $nssmExe stop $svc 2>&1 | Out-Null } catch { }
         try { & $nssmExe remove $svc confirm 2>&1 | Out-Null } catch { }
     }
-    # gammu-smsd's own service registration, if this PC was set up before
-    # this script switched to the NSSM wrapper. Expected to "fail" with
-    # error 1060 (no such service) on a first-time run.
     try { & $smsdExe -u -n $smsdServiceName 2>&1 | Out-Null } catch { }
     Get-Process -Name "gammu-smsd" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 
-    Write-Step "Installing gammu-smsd as a Windows service (via NSSM + CMEE pre-warm)"
+    Write-Step "Installing gammu-smsd as a Windows service"
 
-    # gammu-smsd is deliberately NOT registered with its own `-i` flag.
-    # Some modems (confirmed: Wavecom MULTIBAND 900E 1800) reject every
-    # SIM-touching AT command until AT+CMEE=1 has been sent on the
-    # connection, which gammu-smsd cannot be configured to do -- so it runs
-    # behind gammu-cmee-prewarm.ps1, which sends that first and then execs
-    # gammu-smsd in the foreground. Harmless on modems that don't need it.
-    #
-    # NSSM's CLI re-tokenises AppParameters and mangles quoted paths
-    # containing spaces (e.g. "C:\Program Files\Gammu 1.42.0\..."), so the
-    # arguments are baked into a .cmd shim and AppParameters is left empty.
-    # Sits next to this script in the downloadable branch-agent package
-    # (scripts\), or under infra\scripts\windows\ in a full repo checkout.
-    $prewarmScript = $null
-    foreach ($candidate in @(
-        (Join-Path $PSScriptRoot "gammu-cmee-prewarm.ps1"),
-        (Join-Path $RepoRoot "scripts\gammu-cmee-prewarm.ps1"),
-        (Join-Path $RepoRoot "infra\scripts\windows\gammu-cmee-prewarm.ps1")
-    )) {
-        if ($candidate -and (Test-Path $candidate)) { $prewarmScript = (Resolve-Path $candidate).Path; break }
-    }
-    if (-not $prewarmScript) {
-        throw "gammu-cmee-prewarm.ps1 not found next to this script, or under scripts\ / infra\scripts\windows\ in $RepoRoot."
-    }
-    $smsdShimPath = Join-Path $brandDir "start-gammu-smsd.cmd"
-    $smsdShimContent = @"
-@echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$prewarmScript" -ComPort $ComPort -BaudRate $BaudRate -GammuSmsdExe "$smsdExe" -SmsdrcPath "$smsdrcPath"
-"@
-    Set-ContentNoBom -Path $smsdShimPath -Content $smsdShimContent
-
-    & $nssmExe install $smsdServiceName $smsdShimPath
-    & $nssmExe set $smsdServiceName DisplayName "Gammu SMSD ($BranchCode)"
-    & $nssmExe set $smsdServiceName Start SERVICE_AUTO_START
-    & $nssmExe set $smsdServiceName AppExit Default Restart
-    & $nssmExe set $smsdServiceName AppRestartDelay 10000
-    & $nssmExe set $smsdServiceName AppStdout (Join-Path $brandDir "gammu-smsd.out.log")
-    & $nssmExe set $smsdServiceName AppStderr (Join-Path $brandDir "gammu-smsd.err.log")
-    & $nssmExe start $smsdServiceName
+    # Expected to "fail" with error 1060 (no such service) on a first-time
+    # run -- the uninstall above already handled any pre-existing copy.
+    & $smsdExe -i -c $smsdrcPath -n $smsdServiceName
+    & $smsdExe -e -n $smsdServiceName 2>&1 | Out-Null
+    sc.exe config $smsdServiceName start= auto | Out-Null
+    sc.exe start $smsdServiceName
     Write-Host "Installed and started service: $smsdServiceName" -ForegroundColor Green
 
     Write-Step "Installing branch-agent as a Windows service (via NSSM)"

@@ -47,7 +47,6 @@ COPY branch-agent/README.md /tmp/branch-agent-pkg/branch-agent/README.md
 COPY infra/scripts/windows/setup-branch-agent.ps1 /tmp/branch-agent-pkg/scripts/setup-branch-agent.ps1
 COPY infra/scripts/windows/bootstrap-branch.ps1 /tmp/branch-agent-pkg/scripts/bootstrap-branch.ps1
 COPY infra/scripts/windows/onboard-branch.ps1 /tmp/branch-agent-pkg/scripts/onboard-branch.ps1
-COPY infra/scripts/windows/gammu-cmee-prewarm.ps1 /tmp/branch-agent-pkg/scripts/gammu-cmee-prewarm.ps1
 RUN mkdir -p /var/www/etxtmo-downloads \
     && cd /tmp/branch-agent-pkg \
     && zip -qr /var/www/etxtmo-downloads/branch-agent.zip . \
