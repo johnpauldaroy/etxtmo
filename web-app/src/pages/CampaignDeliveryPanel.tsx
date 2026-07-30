@@ -95,6 +95,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
   const [reassignBranchId, setReassignBranchId] = useState("");
   const [reassignBusy, setReassignBusy] = useState(false);
   const [reassignError, setReassignError] = useState("");
+  const [reassignNotice, setReassignNotice] = useState("");
   const recipientPagination = usePagination(recipientDetails);
   const deliveryCounts = recipientDetails.reduce<Record<string, number>>((counts, recipient) => {
     counts[recipient.status] = (counts[recipient.status] ?? 0) + 1;
@@ -174,14 +175,21 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
     setReassignBusy(true);
     setReassignError("");
     try {
-      await apiRequest(
+      const result = await apiRequest<{ reassigned: number }>(
         `/api/queue/campaigns/${reassignTarget.id}/reassign-branch`,
         "POST",
         { target_branch_id: reassignBranchId },
         token,
       );
+      const targetBranchName = branches.find((branch) => branch.id === reassignBranchId)?.name ?? "the selected branch";
+      const campaignName = reassignTarget.name;
       setReassignTarget(null);
       if (selectedDelivery?.id === reassignTarget.id) await viewDelivery(selectedDelivery);
+      setReassignNotice(
+        result.reassigned > 0
+          ? `"${campaignName}" reassigned: ${result.reassigned} message${result.reassigned === 1 ? "" : "s"} will now send via ${targetBranchName}.`
+          : `"${campaignName}" has no pending or failed messages to reassign.`,
+      );
     } catch (error) {
       setReassignError((error as Error).message);
     } finally {
@@ -219,6 +227,15 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
           <CardDescription>Select a campaign to review every queued recipient message and its delivery status.</CardDescription>
         </CardHeader>
         <CardContent>
+          {reassignNotice && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <p className="text-sm text-emerald-900">{reassignNotice}</p>
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setReassignNotice("")}>
+                <X className="h-4 w-4" />
+                <span className="sr-only">Dismiss</span>
+              </Button>
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
