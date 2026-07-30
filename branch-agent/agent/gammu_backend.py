@@ -36,6 +36,17 @@ _CONNECTION_SUCCESS_MARKERS = (
     "Written message",
     "Received message",
 )
+# Weaker evidence than an actual send/receive: a routine status poll (SMS
+# memory status, network name) that succeeded cleanly. A modem that has
+# never had a message to send/receive -- freshly fixed, or just idle --
+# would otherwise never accumulate a _CONNECTION_SUCCESS_MARKERS line and
+# could never be marked reachable, even though it's working fine; this
+# would also permanently block it from ever being handed a job to prove
+# itself, since the API only dispatches to modems already marked online.
+_CONNECTION_HEALTHY_POLL_MARKERS = (
+    "SMS status received",
+    "Network name received",
+)
 
 
 class GammuBackend:
@@ -280,12 +291,15 @@ class GammuBackend:
             return False
 
         saw_success = False
+        saw_healthy_poll = False
         for line in lines[last_attempt_index:]:
             if any(marker in line for marker in _CONNECTION_ERROR_MARKERS):
                 return False
             if any(marker in line for marker in _CONNECTION_SUCCESS_MARKERS):
                 saw_success = True
-        return saw_success
+            if any(marker in line for marker in _CONNECTION_HEALTHY_POLL_MARKERS):
+                saw_healthy_poll = True
+        return saw_success or saw_healthy_poll
 
     def simulate_send_once(self, *, limit: int = 50) -> int:
         """
