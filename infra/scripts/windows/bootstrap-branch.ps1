@@ -60,6 +60,20 @@ function Assert-Command([string]$Name, [string]$Hint) {
 Assert-Admin
 Assert-Command "python" "Install Python 3.12+ from python.org and ensure it's added to PATH."
 
+# Re-running this on an already-onboarded PC is the normal way to ship a
+# fix, and a running agent holds .venv\Scripts\python.exe open -- which
+# makes both the zip extract and the venv rebuild fail with
+# "Permission denied". Stop the services before touching those files.
+Write-Host "==> Stopping any running branch services" -ForegroundColor Cyan
+foreach ($svc in @("TextKonekBranchAgent-$BranchCode", "GammuSMSD-$BranchCode")) {
+    if (Get-Service $svc -ErrorAction SilentlyContinue) {
+        Write-Host "Stopping $svc"
+        try { Stop-Service $svc -Force -ErrorAction Stop } catch { Write-Warning "Could not stop ${svc}: $_" }
+    }
+}
+Get-Process -Name "gammu-smsd" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
 Write-Host "==> Downloading branch-agent package" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 $zipPath = Join-Path $InstallRoot "branch-agent.zip"

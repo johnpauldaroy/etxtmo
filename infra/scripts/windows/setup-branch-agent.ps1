@@ -325,8 +325,27 @@ if ($CreateApiUser) {
         is_superuser = $false
         branch_id = $BranchId
     } | ConvertTo-Json
-    $newUser = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/users" -ContentType "application/json" -Headers $headers -Body $userBody
-    Write-Host "Created user $($newUser.username) ($($newUser.id)), assigned to branch $BranchId"
+    # Re-running setup on an already-onboarded PC is the normal way to apply
+    # config fixes, so an existing user must not abort the run before the
+    # services are (re)installed. The agent keeps using the password already
+    # in .env; this step only matters on a first install.
+    try {
+        $newUser = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/users" -ContentType "application/json" -Headers $headers -Body $userBody
+        Write-Host "Created user $($newUser.username) ($($newUser.id)), assigned to branch $BranchId"
+    } catch {
+        $detail = ""
+        if ($_.Exception.Response) {
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $detail = $reader.ReadToEnd()
+            $reader.Close()
+        }
+        if ($detail -match "already exists") {
+            Write-Host "User $ApiUsername already exists; keeping it and continuing." -ForegroundColor Yellow
+            Write-Host "  If its password differs from what you just entered, reset it in Administration -> Users." -ForegroundColor Yellow
+        } else {
+            throw
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
