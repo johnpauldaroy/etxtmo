@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Pencil, Plus, X } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import { SelectNative } from "../components/ui/select-native";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { EmptyRow, Pagination, usePagination } from "./common";
-import { Branch, User } from "./types";
+import { Branch, User, UserUpdateInput } from "./types";
 
 type AdminUsersPageProps = {
   users: User[];
@@ -26,6 +26,7 @@ type AdminUsersPageProps = {
   onNewUserIsSuperuserChange: (value: string) => void;
   onNewUserBranchChange: (value: string) => void;
   onCreateUser: (event: FormEvent<HTMLFormElement>) => Promise<boolean>;
+  onUpdateUser: (userId: string, values: UserUpdateInput) => Promise<boolean>;
 };
 
 export function AdminUsersPage({
@@ -44,19 +45,41 @@ export function AdminUsersPage({
   onNewUserIsSuperuserChange,
   onNewUserBranchChange,
   onCreateUser,
+  onUpdateUser,
 }: AdminUsersPageProps) {
   const pagination = usePagination(users);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editUsername, setEditUsername] = useState("");
+  const [editFullName, setEditFullName] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editIsSuperuser, setEditIsSuperuser] = useState(false);
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editBusy, setEditBusy] = useState(false);
   const isStandardUser = newUserIsSuperuser !== "true";
 
   useEffect(() => {
-    if (!dialogOpen) return;
+    if (!dialogOpen && !editingUser) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDialogOpen(false);
+      if (event.key === "Escape") {
+        setDialogOpen(false);
+        setEditingUser(null);
+      }
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [dialogOpen]);
+  }, [dialogOpen, editingUser]);
+
+  function openEditDialog(user: User) {
+    setEditEmail(user.email ?? "");
+    setEditUsername(user.username);
+    setEditFullName(user.full_name);
+    setEditPassword("");
+    setEditIsSuperuser(user.is_superuser);
+    setEditIsActive(user.is_active !== false);
+    setEditingUser(user);
+  }
 
   return (
     <Card>
@@ -79,6 +102,7 @@ export function AdminUsersPage({
               <TableHead>Email</TableHead>
               <TableHead>Scope</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -97,9 +121,15 @@ export function AdminUsersPage({
                     {user.is_active === false ? "Inactive" : "Active"}
                   </Badge>
                 </TableCell>
+                <TableCell className="text-right">
+                  <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(user)}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
-            {users.length === 0 && <EmptyRow colSpan={5} message="No users found." />}
+            {users.length === 0 && <EmptyRow colSpan={6} message="No users found." />}
           </TableBody>
         </Table>
         <Pagination {...pagination} totalItems={users.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
@@ -224,6 +254,127 @@ export function AdminUsersPage({
               <div className="flex justify-end gap-2 border-t pt-4">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                 <Button type="submit">Create user</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingUser && (
+        <div className="fixed inset-0 z-[70] grid place-items-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            aria-label="Close edit user dialog"
+            onClick={() => setEditingUser(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-user-title"
+            className="relative z-10 w-full max-w-2xl animate-slide-up rounded-xl border bg-card p-6 shadow-2xl"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 id="edit-user-title" className="text-xl font-semibold">Edit account</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Update profile details, access level, account status, or password.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="-mr-2 -mt-2" onClick={() => setEditingUser(null)}>
+                <X className="h-5 w-5" />
+                <span className="sr-only">Close</span>
+              </Button>
+            </div>
+
+            <form
+              className="space-y-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setEditBusy(true);
+                const updated = await onUpdateUser(editingUser.id, {
+                  email: editEmail.trim(),
+                  username: editUsername.trim(),
+                  full_name: editFullName.trim(),
+                  is_active: editIsActive,
+                  is_superuser: editIsSuperuser,
+                  password: editPassword || null,
+                });
+                setEditBusy(false);
+                if (updated) setEditingUser(null);
+              }}
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium">
+                  Full name
+                  <Input
+                    required
+                    autoFocus
+                    value={editFullName}
+                    onChange={(event) => setEditFullName(event.target.value)}
+                  />
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  Username
+                  <Input
+                    required
+                    value={editUsername}
+                    onChange={(event) => setEditUsername(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium">
+                  Email
+                  <Input
+                    type="email"
+                    required
+                    value={editEmail}
+                    onChange={(event) => setEditEmail(event.target.value)}
+                  />
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  New password (optional)
+                  <Input
+                    type="password"
+                    minLength={4}
+                    autoComplete="new-password"
+                    placeholder="Leave blank to keep current password"
+                    value={editPassword}
+                    onChange={(event) => setEditPassword(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium">
+                  Access level
+                  <SelectNative
+                    value={String(editIsSuperuser)}
+                    onChange={(event) => setEditIsSuperuser(event.target.value === "true")}
+                  >
+                    <option value="false">Standard user</option>
+                    <option value="true">Superuser</option>
+                  </SelectNative>
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  Account status
+                  <SelectNative
+                    value={String(editIsActive)}
+                    onChange={(event) => setEditIsActive(event.target.value === "true")}
+                  >
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </SelectNative>
+                </label>
+              </div>
+              <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-muted-foreground">
+                Existing branch assignments are preserved. Assign a branch in Admin Access before changing an unassigned superuser to a standard user.
+              </p>
+              <div className="flex justify-end gap-2 border-t pt-4">
+                <Button type="button" variant="outline" disabled={editBusy} onClick={() => setEditingUser(null)}>Cancel</Button>
+                <Button type="submit" disabled={editBusy}>
+                  {editBusy ? "Saving..." : "Save changes"}
+                </Button>
               </div>
             </form>
           </div>

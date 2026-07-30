@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { apiRequest } from "../api/client";
-import { Branch, BranchAssignmentUser, Role, User } from "../pages/types";
+import { Branch, BranchAssignmentUser, Role, User, UserUpdateInput } from "../pages/types";
 
 type UseAdminActionsOptions = {
   token: string;
@@ -171,6 +171,23 @@ export function useAdminActions({
     }
   }
 
+  async function updateUser(userId: string, values: UserUpdateInput) {
+    try {
+      await apiRequest<User>(
+        `/api/admin/users/${userId}`,
+        "PUT",
+        values,
+        token,
+      );
+      await refreshUsersAndRoles(token);
+      onError("");
+      return true;
+    } catch (err) {
+      onError((err as Error).message);
+      return false;
+    }
+  }
+
   async function createRole(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!newRoleName.trim()) {
@@ -288,6 +305,7 @@ export function useAdminActions({
     newBranchTimezone,
     setNewBranchTimezone,
     createUser,
+    updateUser,
     createRole,
     assignUserBranch,
     createBranch,

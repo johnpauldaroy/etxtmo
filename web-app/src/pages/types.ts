@@ -7,6 +7,14 @@ export type User = {
   is_active?: boolean;
   is_superuser: boolean;
 };
+export type UserUpdateInput = {
+  email: string;
+  username: string;
+  full_name: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  password?: string | null;
+};
 export type Role = { id: number; name: string; description?: string | null };
 export type BranchAssignmentUser = { user_id: string; username: string; email: string; role_id: number | null };
 export type Contact = { id: string; phone_number: string; first_name?: string; last_name?: string; consented: boolean };

@@ -29,8 +29,21 @@ class UserCreate(BaseModel):
     branch_id: uuid.UUID | None = None
 
 
+class UserUpdate(BaseModel):
+    email: EmailStr
+    username: str = Field(min_length=1, max_length=100)
+    full_name: str = Field(min_length=1, max_length=255)
+    is_active: bool
+    is_superuser: bool
+    password: str | None = Field(default=None, min_length=4)
+
+
 class PasswordReset(BaseModel):
-    password: str = Field(min_length=8)
+    # Lowered from 8 on request, to allow existing short branch-agent
+    # service passwords. Note this applies to every account, superadmins
+    # included, and UserCreate has no length validation at all -- so there
+    # is no longer any meaningful password-length guard in the API.
+    password: str = Field(min_length=4)
 
 
 class UserOut(BaseModel):

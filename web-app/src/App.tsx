@@ -282,6 +282,7 @@ export function App() {
               onNewUserIsSuperuserChange={admin.setNewUserIsSuperuser}
               onNewUserBranchChange={admin.setNewUserBranchId}
             onCreateUser={admin.createUser}
+            onUpdateUser={admin.updateUser}
           />
         );
       case "admin_access":

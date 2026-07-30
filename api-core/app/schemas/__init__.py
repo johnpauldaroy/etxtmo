@@ -54,6 +54,7 @@ from app.schemas.entities import (
     UserBranchAssign,
     UserCreate,
     UserOut,
+    UserUpdate,
 )
 
 __all__ = [
@@ -112,4 +113,5 @@ __all__ = [
     "UserBranchAssign",
     "UserCreate",
     "UserOut",
+    "UserUpdate",
 ]

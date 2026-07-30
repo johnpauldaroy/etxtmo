@@ -3,12 +3,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import assert_branch_access, get_current_user
-from app.core.security import generate_api_key
+from app.core.security import generate_api_key, get_password_hash
 from app.models import ApiKey, Branch, Role, User, UserBranch
 from app.schemas import (
     ApiKeyCreate,
@@ -20,6 +20,7 @@ from app.schemas import (
     RoleOut,
     UserBranchAssign,
     UserOut,
+    UserUpdate,
 )
 from app.services.audit import record_audit_event
 
@@ -80,6 +81,88 @@ def list_users(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superuser only")
     users = db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
     return [UserOut.model_validate(user) for user in users]
+
+
+@router.put("/users/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: uuid.UUID,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserOut:
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superuser only")
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    username = payload.username.strip()
+    full_name = payload.full_name.strip()
+    if not username or not full_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and full name are required")
+
+    duplicate = db.execute(
+        select(User.id).where(
+            User.id != user_id,
+            (User.email == payload.email) | (User.username == username),
+        ),
+    ).scalar_one_or_none()
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email or username is already in use")
+
+    removing_active_superuser = (
+        user.is_superuser
+        and user.is_active
+        and (not payload.is_superuser or not payload.is_active)
+    )
+    if removing_active_superuser:
+        active_superusers = db.execute(
+            select(func.count(User.id)).where(User.is_superuser.is_(True), User.is_active.is_(True)),
+        ).scalar_one()
+        if active_superusers <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The last active superuser cannot be deactivated or changed to a standard user",
+            )
+
+    if not payload.is_superuser:
+        has_branch = db.execute(
+            select(UserBranch.id).where(UserBranch.user_id == user_id).limit(1),
+        ).scalar_one_or_none()
+        if has_branch is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Assign at least one branch before changing this account to a standard user",
+            )
+
+    changed_fields: list[str] = []
+    updates = {
+        "email": str(payload.email),
+        "username": username,
+        "full_name": full_name,
+        "is_active": payload.is_active,
+        "is_superuser": payload.is_superuser,
+    }
+    for field, value in updates.items():
+        if getattr(user, field) != value:
+            setattr(user, field, value)
+            changed_fields.append(field)
+    if payload.password:
+        user.password_hash = get_password_hash(payload.password)
+        changed_fields.append("password")
+
+    record_audit_event(
+        db,
+        action="user_updated",
+        entity_type="user",
+        entity_id=str(user.id),
+        user_id=current_user.id,
+        payload={"changed_fields": changed_fields},
+    )
+    db.commit()
+    db.refresh(user)
+    return UserOut.model_validate(user)
 
 
 @router.get("/roles", response_model=list[RoleOut])
@@ -243,4 +326,3 @@ def revoke_api_key(
     )
     db.commit()
     return {"status": "revoked"}
-
