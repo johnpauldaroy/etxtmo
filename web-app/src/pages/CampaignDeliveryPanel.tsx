@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, LoaderCircle, RotateCw, Shuffle, X } from "lucide-react";
+import { CircleAlert, Eye, LoaderCircle, RotateCw, Shuffle, X } from "lucide-react";
 
 import { apiRequest } from "../api/client";
 import { Badge } from "../components/ui/badge";
@@ -33,6 +33,7 @@ type DeliveryRow = CampaignDeliveryRow | ApiKeyDeliveryRow;
 
 const readableStatus = (status: string) => {
   if (status === "approved") return "Scheduled";
+  if (status === "sent") return "Submitted";
   return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
@@ -224,7 +225,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
       <Card>
         <CardHeader>
           <CardTitle>Campaign deliveries</CardTitle>
-          <CardDescription>Select a campaign to review every queued recipient message and its delivery status.</CardDescription>
+          <CardDescription>Select a campaign to review every queued recipient message and its modem submission status.</CardDescription>
         </CardHeader>
         <CardContent>
           {reassignNotice && (
@@ -318,8 +319,8 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                 <h2 id="campaign-details-title" className="text-xl font-semibold">{selectedDelivery.name}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {selectedDelivery.kind === "api-key"
-                    ? "All SMS requests sent with this API key."
-                    : "Recipient messages and delivery results."}
+                    ? "All SMS requests submitted with this API key."
+                    : "Recipient messages and modem submission results."}
                 </p>
               </div>
               <Button type="button" variant="ghost" size="icon" className="-mr-2 -mt-2" onClick={() => setSelectedDelivery(null)}>
@@ -345,7 +346,7 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     {[
                       ["Total", recipientDetails.length, "bg-slate-100 text-slate-700"],
-                      ["Sent", deliveryCounts.sent ?? 0, "bg-emerald-100 text-emerald-700"],
+                      ["Submitted", deliveryCounts.sent ?? 0, "bg-emerald-100 text-emerald-700"],
                       ["Failed", deliveryCounts.failed ?? 0, "bg-red-100 text-red-700"],
                       ["Pending", deliveryCounts.pending ?? 0, "bg-amber-100 text-amber-700"],
                       ["Sending", deliveryCounts.sending ?? 0, "bg-sky-100 text-sky-700"],
@@ -356,6 +357,15 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                       </div>
                     ))}
                   </div>
+
+                  {(deliveryCounts.sent ?? 0) > 0 && (
+                    <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+                      <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>
+                        Submitted means the modem and mobile network accepted the SMS. It does not confirm that the recipient&apos;s phone received it because carrier delivery reports are not currently tracked.
+                      </p>
+                    </div>
+                  )}
 
                   {(deliveryCounts.failed ?? 0) > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
@@ -374,12 +384,12 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                       <TableRow>
                         <TableHead>Contact</TableHead>
                         <TableHead>Phone</TableHead>
-                        <TableHead>Message sent</TableHead>
+                        <TableHead>Message</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Attempts</TableHead>
                         <TableHead>Modem used</TableHead>
                         <TableHead>Created</TableHead>
-                        <TableHead>Sent at</TableHead>
+                        <TableHead>Submitted at</TableHead>
                         <TableHead>Error</TableHead>
                         <TableHead className="text-right">Action</TableHead>
                       </TableRow>

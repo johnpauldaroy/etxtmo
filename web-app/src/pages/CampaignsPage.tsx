@@ -43,6 +43,7 @@ type CampaignsPageProps = {
 
 const readableStatus = (status: string) => {
   if (status === "approved") return "Scheduled";
+  if (status === "sent") return "Submitted";
   return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 

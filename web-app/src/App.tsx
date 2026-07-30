@@ -30,7 +30,7 @@ const pageMeta: Record<TabKey, { eyebrow: string; title: string; description: st
   templates: { eyebrow: "Workspace", title: "Message templates", description: "Create reusable, approved content for faster sending." },
   campaigns: { eyebrow: "Workspace", title: "Campaigns", description: "Create individual or batch messaging campaigns." },
   rules: { eyebrow: "Operations", title: "Schedules", description: "Automate recurring branch messaging." },
-  queue: { eyebrow: "Operations", title: "Message queue", description: "Monitor deliveries and retry failed messages." },
+  queue: { eyebrow: "Operations", title: "Message queue", description: "Monitor modem submissions and retry failed messages." },
   incoming: { eyebrow: "Operations", title: "Inbox & opt-outs", description: "Review replies and keep recipient preferences current." },
   modems: { eyebrow: "System", title: "Modems", description: "Monitor registered hardware and branch connectivity." },
   audit: { eyebrow: "System", title: "Audit log", description: "Trace recent branch activity and system events." },

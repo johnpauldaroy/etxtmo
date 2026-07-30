@@ -25,10 +25,10 @@ function DeliveryLineChart({ data }: { data: DeliveryTrendPoint[] }) {
   return (
     <div>
       <div className="mb-3 flex items-center gap-5 text-xs">
-        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Sent</span>
+        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Submitted</span>
         <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Failed</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label="Sent and failed messages over the last seven days">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label="Submitted and failed messages over the last seven days">
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const lineY = padding.top + plotHeight - ratio * plotHeight;
           return (
@@ -50,7 +50,7 @@ function DeliveryLineChart({ data }: { data: DeliveryTrendPoint[] }) {
         {data.map((point, index) => (
           <g key={`points-${point.date}`}>
             <circle cx={x(index)} cy={y(point.sent)} r="4" fill="#fff" stroke="#10b981" strokeWidth="3">
-              <title>{`${point.date}: ${point.sent} sent`}</title>
+              <title>{`${point.date}: ${point.sent} submitted`}</title>
             </circle>
             <circle cx={x(index)} cy={y(point.failed)} r="4" fill="#fff" stroke="#f43f5e" strokeWidth="3">
               <title>{`${point.date}: ${point.failed} failed`}</title>
@@ -71,7 +71,7 @@ function DeliveryBarChart({ sent, failed }: { sent: number; failed: number }) {
     <div className="space-y-6">
       <div className="flex items-end justify-between rounded-xl bg-slate-50 p-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Delivery rate</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Submission success</p>
           <p className="mt-1 text-4xl font-semibold tracking-tight">{successRate}%</p>
         </div>
         <p className="text-right text-xs text-muted-foreground">{compactNumber(total)} total<br />completed messages</p>
@@ -79,7 +79,7 @@ function DeliveryBarChart({ sent, failed }: { sent: number; failed: number }) {
       <div className="space-y-5">
         <div>
           <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="flex items-center gap-2 font-medium"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Sent</span>
+            <span className="flex items-center gap-2 font-medium"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Submitted</span>
             <span className="font-semibold">{sent.toLocaleString()}</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-slate-100">
@@ -116,12 +116,12 @@ export function DashboardPage({ report, deliveryTrend }: DashboardPageProps) {
         </Card>
         <Card className="border-emerald-100 shadow-sm">
           <CardHeader className="pb-2">
-            <CardDescription>Messages Sent</CardDescription>
+            <CardDescription>Messages Submitted</CardDescription>
             <CardTitle className="text-3xl">{report?.messages_sent ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-2 text-xs text-muted-foreground">
             <Send className="h-4 w-4 text-emerald-600" />
-            Successfully delivered SMS
+            Accepted by the modem and mobile network
           </CardContent>
         </Card>
         <Card className="border-red-100 shadow-sm">
@@ -131,7 +131,7 @@ export function DashboardPage({ report, deliveryTrend }: DashboardPageProps) {
           </CardHeader>
           <CardContent className="flex items-center gap-2 text-xs text-muted-foreground">
             <AlertTriangle className="h-4 w-4 text-red-500" />
-            Delivery failures requiring review
+            Modem submission failures requiring review
           </CardContent>
         </Card>
         <Card className="border-amber-100 shadow-sm">
@@ -149,8 +149,8 @@ export function DashboardPage({ report, deliveryTrend }: DashboardPageProps) {
       <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Delivery Trend</CardTitle>
-            <CardDescription>Sent and failed messages over the last 7 days.</CardDescription>
+            <CardTitle>Submission Trend</CardTitle>
+            <CardDescription>Submitted and failed messages over the last 7 days.</CardDescription>
           </CardHeader>
           <CardContent>
             <DeliveryLineChart data={deliveryTrend} />
@@ -159,8 +159,8 @@ export function DashboardPage({ report, deliveryTrend }: DashboardPageProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Delivery Performance</CardTitle>
-            <CardDescription>Overall sent and failed message totals.</CardDescription>
+            <CardTitle>Submission Performance</CardTitle>
+            <CardDescription>Overall modem submission and failure totals.</CardDescription>
           </CardHeader>
           <CardContent>
             <DeliveryBarChart sent={report?.messages_sent ?? 0} failed={report?.messages_failed ?? 0} />
