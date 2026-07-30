@@ -150,6 +150,20 @@ def test_is_modem_reachable_true_after_clean_status_poll_without_send(tmp_path: 
         backend.close()
 
 
+def test_is_modem_reachable_true_when_older_wavecom_rejects_sms_status_query(tmp_path: Path):
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text(
+        "Starting phone communication...\n"
+        "Error getting SMS status: Unknown error. (UNKNOWN[27])\n",
+        encoding="utf-8",
+    )
+    backend = make_backend(tmp_path, smsd_log_path=str(log_path))
+    try:
+        assert backend.is_modem_reachable() is True
+    finally:
+        backend.close()
+
+
 def test_is_modem_reachable_true_when_new_reconnect_attempt_has_no_outcome_yet(tmp_path: Path):
     # Regression test: SMSD reconnects periodically even while healthy. If the
     # most recent "Starting phone communication..." line hasn't logged an

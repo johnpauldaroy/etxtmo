@@ -264,6 +264,9 @@ logfile = $smsdLogPath
 debuglevel = 1
 commtimeout = 30
 sendtimeout = 30
+checksecurity = 0
+deliveryreport = log
+deliveryreportdelay = 600
 outboxformat = standard
 transmitformat = auto
 

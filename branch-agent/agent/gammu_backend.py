@@ -43,6 +43,12 @@ _CONNECTION_SUCCESS_MARKERS = (
 _CONNECTION_HEALTHY_POLL_MARKERS = (
     "SMS status received",
     "Network name received",
+    # Older Wavecom firmware can reject Gammu's SMS-memory status query
+    # with UNKNOWN[27] even while AT commands, network registration, and
+    # outbound SMS all work. The response still proves that the modem is
+    # connected and answering; fatal serial/init errors remain authoritative
+    # because the newest matching log line wins below.
+    "Error getting SMS status: Unknown error. (UNKNOWN[27])",
 )
 
 
