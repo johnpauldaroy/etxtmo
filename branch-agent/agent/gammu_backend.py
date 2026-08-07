@@ -109,9 +109,12 @@ class GammuBackend:
     def enqueue_outbound(self, *, queue_id: str, phone_number: str, message_body: str) -> None:
         safe_phone = re.sub(r"[^0-9+]", "", phone_number)
         now = datetime.now()
+        # The FILES backend uses the extension's `d` flag to request a
+        # carrier delivery report. `DeliveryReport = log` only controls how
+        # SMSD handles a report after it arrives; it does not request one.
         filename = (
             f"{_OUT_PREFIX}A{now:%Y%m%d_%H%M%S}_{now.microsecond:06d}_"
-            f"{safe_phone}_{queue_id}.txt"
+            f"{safe_phone}_{queue_id}.txtd"
         )
         target = self.outbox_path / filename
         temporary = target.with_suffix(".tmp")
@@ -121,7 +124,7 @@ class GammuBackend:
     def fetch_delivery_updates(self) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
 
-        for entry in sorted(self.sent_path.glob(f"{_OUT_PREFIX}*.txt")):
+        for entry in sorted(self.sent_path.glob(f"{_OUT_PREFIX}*.txt*")):
             if self._already_processed("tb_processed_outcome", entry.name):
                 continue
             queue_id = self._extract_queue_id(entry.name)
@@ -136,7 +139,7 @@ class GammuBackend:
                 )
             self._mark_processed("tb_processed_outcome", entry.name)
 
-        for entry in sorted(self.error_path.glob(f"{_OUT_PREFIX}*.txt")):
+        for entry in sorted(self.error_path.glob(f"{_OUT_PREFIX}*.txt*")):
             if self._already_processed("tb_processed_outcome", entry.name):
                 continue
             queue_id = self._extract_queue_id(entry.name)
@@ -156,7 +159,7 @@ class GammuBackend:
     @staticmethod
     def _extract_queue_id(filename: str) -> str | None:
         # Gammu FILES format:
-        # OUT<priority><date>_<time>_<serial>_<recipient>_<note>.txt
+        # OUT<priority><date>_<time>_<serial>_<recipient>_<note>.txt[d]
         # The central queue UUID is stored in the arbitrary note field.
         body = Path(filename).stem
         _, separator, queue_id = body.rpartition("_")
@@ -262,9 +265,12 @@ class GammuBackend:
         Absence of any evidence at all (never attempted, or nothing logged
         since a stale mark) is not enough to call it healthy -- a stuck,
         endlessly retrying SMSD, or one just restarted, must not read as
-        healthy by default. A configured but missing/stale log is
-        unhealthy: otherwise a stopped SMSD service or unplugged modem can
-        remain online forever.
+        healthy by default. A configured but missing log is unhealthy. A
+        stale log is also unhealthy unless Windows still confirms the
+        configured serial port exists and the last logged modem outcome was
+        healthy. Some older Wavecom modems do not emit periodic log entries
+        after answering SMSD's initial status query, so log age alone cannot
+        be treated as a disconnect for those devices.
 
         The registry-based port check is used only as a fast-fail: for USB
         serial adapters, Windows can leave the port listed in SERIALCOMM for
@@ -281,10 +287,11 @@ class GammuBackend:
             return False
 
         try:
-            if (
+            log_is_stale = (
                 self.smsd_log_stale_after_seconds > 0
                 and time.time() - self.smsd_log_path.stat().st_mtime > self.smsd_log_stale_after_seconds
-            ):
+            )
+            if log_is_stale and port_present is not True:
                 return False
             with self.smsd_log_path.open("rb") as handle:
                 handle.seek(0, 2)
@@ -319,7 +326,7 @@ class GammuBackend:
         real modem. Keep disabled in production where Gammu SMSD handles send.
         """
         processed = 0
-        for entry in sorted(self.outbox_path.glob(f"{_OUT_PREFIX}*.txt"))[:limit]:
+        for entry in sorted(self.outbox_path.glob(f"{_OUT_PREFIX}*.txt*"))[:limit]:
             target = self.sent_path / entry.name
             entry.replace(target)
             processed += 1

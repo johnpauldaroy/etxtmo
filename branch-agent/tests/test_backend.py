@@ -15,10 +15,10 @@ def test_enqueue_and_fetch_results(tmp_path: Path):
     backend = make_backend(tmp_path)
     try:
         backend.enqueue_outbound(queue_id="q1", phone_number="+639991111111", message_body="hello")
-        queued = list((tmp_path / "outbox").glob("OUT*.txt"))
+        queued = list((tmp_path / "outbox").glob("OUT*.txtd"))
         assert len(queued) == 1
         assert re.fullmatch(
-            r"OUTA\d{8}_\d{6}_\d{6}_\+639991111111_q1\.txt",
+            r"OUTA\d{8}_\d{6}_\d{6}_\+639991111111_q1\.txtd",
             queued[0].name,
         )
         queued[0].replace(tmp_path / "sent" / queued[0].name)
@@ -105,6 +105,30 @@ def test_is_modem_reachable_false_when_smsd_log_is_stale(tmp_path: Path):
     )
     try:
         assert backend.is_modem_reachable() is False
+    finally:
+        backend.close()
+
+
+def test_is_modem_reachable_true_when_stale_log_is_healthy_and_serial_port_exists(
+    tmp_path: Path,
+):
+    log_path = tmp_path / "smsd.log"
+    log_path.write_text(
+        "Starting phone communication...\n"
+        "Error getting SMS status: Unknown error. (UNKNOWN[27])\n",
+        encoding="utf-8",
+    )
+    old = time.time() - 300
+    os.utime(log_path, (old, old))
+    backend = make_backend(
+        tmp_path,
+        smsd_log_path=str(log_path),
+        smsd_log_stale_after_seconds=120,
+    )
+    backend.modem_port = "COM11"
+    backend._configured_serial_port_present = lambda: True
+    try:
+        assert backend.is_modem_reachable() is True
     finally:
         backend.close()
 
