@@ -55,6 +55,11 @@ RUN mkdir -p /var/www/etxtmo-downloads \
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Operator tool, run by hand via `docker exec` -- never on the startup path.
+# See infra/scripts/cancel-queued.sh for why.
+COPY infra/scripts/cancel-queued.sh /usr/local/bin/cancel-queued
+RUN chmod +x /usr/local/bin/cancel-queued
+
 EXPOSE 80
 
 CMD ["/entrypoint.sh"]
