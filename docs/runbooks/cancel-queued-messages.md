@@ -23,22 +23,43 @@ afterwards.
 
 ## Procedure
 
-Run from the VPS shell, or Dokploy's terminal for the app container.
+Run these **inside the container** -- Dokploy's Docker Terminal for the app is
+already a shell in the container, so there is no `docker exec` prefix there.
+From the VPS host instead, prefix each with `docker exec -it <container>`.
+
+### API messages (the "API — <label>" rows)
+
+Each message sent through the SMS gateway API creates its **own** campaign, so
+an API key showing "2805 API messages" is 2805 single-recipient campaigns.
+Select those by API key, which is exactly how the UI groups them:
 
 ```bash
-# 1. List campaigns that still have stoppable work, and copy the campaign id.
-docker exec -it <container> cancel-queued --list
+# 1. List API keys with stoppable work, and copy the api_key_id.
+cancel-queued --list-api-keys
 
-# 2. Dry run. Writes nothing; confirm the counts look right.
-docker exec -it <container> cancel-queued --campaign <uuid>
+# 2. Dry run. Writes nothing; confirm the campaign and pending counts.
+cancel-queued --api-key <api_key_id>
 
 # 3. Apply.
-docker exec -it <container> cancel-queued --campaign <uuid> --apply
+cancel-queued --api-key <api_key_id> --apply
 ```
 
-Several campaigns at once: repeat `--campaign <uuid>` for each.
+### Ordinary campaigns
 
-Without `--apply` the script always rolls back, so step 2 is safe to repeat.
+```bash
+cancel-queued --list
+cancel-queued --campaign <uuid>            # dry run
+cancel-queued --campaign <uuid> --apply
+```
+
+Several at once: repeat `--campaign` or `--api-key` for each. The two can be
+mixed in one run, and a campaign selected twice is only cancelled once.
+
+Without `--apply` the script always rolls back, so the dry run is safe to
+repeat as often as you like.
+
+If `cancel-queued` is not found, the deployed image predates it; use
+`cd /app && PYTHONPATH=/app python -m app.scripts.cancel_queued` instead.
 
 ## Known consequence: cancelled shows as "Failed"
 
