@@ -9,7 +9,17 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import assert_branch_access, get_current_superuser, get_current_user
-from app.models import Branch, Campaign, CampaignRecipient, MessageLog, MessageQueue, QueueStatus, RecipientStatus, User
+from app.models import (
+    Branch,
+    Campaign,
+    CampaignRecipient,
+    CampaignStatus,
+    MessageLog,
+    MessageQueue,
+    QueueStatus,
+    RecipientStatus,
+    User,
+)
 from app.schemas import QueueItemOut, QueueReassignBranchRequest
 from app.services.audit import record_audit_event
 from app.services.queue import recalculate_campaign_status
@@ -139,6 +149,73 @@ def reassign_campaign_branch(
         recalculate_campaign_status(db, campaign_id)
         db.commit()
     return {"reassigned": len(items)}
+
+
+@router.post("/campaigns/{campaign_id}/cancel")
+def cancel_campaign(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int | str]:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    assert_branch_access(db, current_user, campaign.branch_id)
+
+    # Queue claims use row locks too. Locked rows are already being handed to a
+    # modem, so skip them instead of claiming that they were cancelled.
+    items = db.execute(
+        select(MessageQueue)
+        .where(
+            MessageQueue.campaign_id == campaign_id,
+            MessageQueue.status == QueueStatus.pending,
+        )
+        .with_for_update(skip_locked=True),
+    ).scalars().all()
+
+    for item in items:
+        item.status = QueueStatus.cancelled
+        item.error_message = "Cancelled by user"
+        item.locked_at = None
+        item.modem_id = None
+        item.execution_branch_id = None
+        item.failover_route_id = None
+        item.forced_execution_branch_id = None
+        recipient = db.get(CampaignRecipient, item.campaign_recipient_id)
+        if recipient is not None:
+            recipient.status = RecipientStatus.cancelled
+        db.add(
+            MessageLog(
+                branch_id=item.branch_id,
+                campaign_id=item.campaign_id,
+                queue_id=item.id,
+                recipient_phone=recipient.phone_number if recipient else "",
+                event_type="queue_cancelled",
+                event_status=QueueStatus.cancelled.value,
+                details_json={"reason": "Cancelled by user"},
+            ),
+        )
+
+    in_flight = db.execute(
+        select(func.count(MessageQueue.id)).where(
+            MessageQueue.campaign_id == campaign_id,
+            MessageQueue.status == QueueStatus.sending,
+        ),
+    ).scalar_one()
+    if items:
+        campaign.status = CampaignStatus.cancelled
+
+    record_audit_event(
+        db,
+        action="queue_campaign_cancelled",
+        entity_type="campaign",
+        entity_id=str(campaign_id),
+        user_id=current_user.id,
+        branch_id=campaign.branch_id,
+        payload={"cancelled": len(items), "in_flight": in_flight},
+    )
+    db.commit()
+    return {"status": campaign.status.value, "cancelled": len(items), "in_flight": in_flight}
 
 
 @router.post("/campaigns/{campaign_id}/retry-failed")

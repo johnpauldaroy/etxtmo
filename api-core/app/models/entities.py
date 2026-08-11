@@ -30,6 +30,7 @@ class CampaignStatus(str, enum.Enum):
     sending = "sending"
     sent = "sent"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class QueueStatus(str, enum.Enum):
@@ -37,6 +38,7 @@ class QueueStatus(str, enum.Enum):
     sending = "sending"
     sent = "sent"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class RecipientStatus(str, enum.Enum):
@@ -44,6 +46,7 @@ class RecipientStatus(str, enum.Enum):
     sending = "sending"
     sent = "sent"
     failed = "failed"
+    cancelled = "cancelled"
     opted_out = "opted_out"
     skipped = "skipped"
 

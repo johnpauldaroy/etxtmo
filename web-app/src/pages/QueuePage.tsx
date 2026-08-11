@@ -25,5 +25,13 @@ export function QueuePage({ campaigns, token, branchId, branches, isSuperuser, r
     return () => window.clearInterval(intervalId);
   }, [branchId, refreshCampaigns, token]);
 
-  return <CampaignDeliveryPanel campaigns={campaigns} token={token} branches={branches} isSuperuser={isSuperuser} />;
+  return (
+    <CampaignDeliveryPanel
+      campaigns={campaigns}
+      token={token}
+      branches={branches}
+      isSuperuser={isSuperuser}
+      refreshCampaigns={() => refreshCampaigns(token, branchId)}
+    />
+  );
 }

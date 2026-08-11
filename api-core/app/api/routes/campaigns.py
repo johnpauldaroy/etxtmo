@@ -20,13 +20,19 @@ from app.models import (
     MessageQueue,
     Modem,
     OptOut,
+    RecipientStatus,
     Template,
     User,
 )
 from app.schemas import CampaignBatchUpload, CampaignCreate, CampaignOut
 from app.services.audit import record_audit_event
 from app.services.campaigns import move_to_submission_state
-from app.services.queue import expand_recipients_for_campaign, now_utc, queue_campaign
+from app.services.queue import (
+    expand_recipients_for_campaign,
+    is_valid_phone_number,
+    now_utc,
+    queue_campaign,
+)
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 MAX_BATCH_ROWS = 10_000
@@ -230,6 +236,7 @@ def create_campaign_from_batch_upload(
 
     inserted = 0
     skipped = 0
+    invalid = 0
     seen_phones: set[str] = set()
     for row in payload.rows:
         phone_number = (row.phone_number or "").strip()
@@ -249,6 +256,9 @@ def create_campaign_from_batch_upload(
             skipped += 1
             continue
 
+        # Record unusable numbers as failed recipients so they show up in the
+        # campaign report instead of vanishing into the skipped count.
+        valid = is_valid_phone_number(phone_number)
         db.add(
             CampaignRecipient(
                 campaign_id=campaign.id,
@@ -256,10 +266,14 @@ def create_campaign_from_batch_upload(
                 contact_id=contact.id if contact else None,
                 phone_number=phone_number,
                 message_body=message_body,
+                status=RecipientStatus.pending if valid else RecipientStatus.failed,
             ),
         )
         seen_phones.add(phone_number)
-        inserted += 1
+        if valid:
+            inserted += 1
+        else:
+            invalid += 1
 
     if inserted == 0:
         raise HTTPException(
@@ -283,6 +297,7 @@ def create_campaign_from_batch_upload(
             "status": campaign.status.value,
             "inserted": inserted,
             "skipped": skipped,
+            "invalid": invalid,
             "queued": queued,
         },
     )
@@ -292,6 +307,7 @@ def create_campaign_from_batch_upload(
         "status": campaign.status.value,
         "inserted": inserted,
         "skipped": skipped,
+        "invalid": invalid,
         "queued": queued,
     }
 

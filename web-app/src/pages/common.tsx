@@ -9,7 +9,7 @@ import { BadgeVariant } from "./types";
 export const mapStatusToBadge = (status: string): BadgeVariant => {
   const value = status.toLowerCase();
   if (["sent", "approved", "online", "ok"].includes(value)) return "success";
-  if (["failed", "rejected", "error", "offline"].includes(value)) return "destructive";
+  if (["failed", "rejected", "error", "offline", "cancelled"].includes(value)) return "destructive";
   if (["pending", "queued", "sending", "draft"].includes(value)) return "warning";
   return "secondary";
 };

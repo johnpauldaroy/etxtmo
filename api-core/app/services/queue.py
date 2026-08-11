@@ -56,6 +56,24 @@ def render_contact_message(message: str, contact: Contact) -> str:
     return re.sub(r" +([,.;:!?])", r"\1", rendered)
 
 
+# PH mobile numbers: 11 digits as 09XXXXXXXXX, or +639XXXXXXXXX / 639XXXXXXXXX.
+_PH_MOBILE_RE = re.compile(r"^(?:0|63|\+63)9\d{9}$")
+
+
+def is_valid_phone_number(phone_number: str | None) -> bool:
+    """True when this is a dialable PH mobile number, in either the 09XXXXXXXXX
+    or +639XXXXXXXXX form. Separators callers paste from spreadsheets (spaces,
+    dashes, parentheses) are ignored when checking.
+
+    Deliberately only validates -- the stored number keeps whatever form it came
+    in as. Rewriting it would change the value shown in the UI and break the
+    exact-string matching used for opt-out and duplicate detection."""
+    if not phone_number:
+        return False
+    cleaned = re.sub(r"[\s()\-.]", "", phone_number.strip())
+    return bool(_PH_MOBILE_RE.match(cleaned))
+
+
 DEFAULT_MODEM_OFFLINE_AFTER_SECONDS = 90
 
 
@@ -174,16 +192,21 @@ def expand_recipients_for_campaign(
         if existing:
             continue
 
+        # Unusable numbers are recorded as failed rather than queued: the modem
+        # can never deliver them, and queueing them leaves the row sitting in
+        # "sending" until a human notices.
+        valid = is_valid_phone_number(contact.phone_number)
         recipient = CampaignRecipient(
             campaign_id=campaign.id,
             branch_id=campaign.branch_id,
             contact_id=contact.id,
             phone_number=contact.phone_number,
             message_body=render_contact_message(message_body, contact),
-            status=RecipientStatus.pending,
+            status=RecipientStatus.pending if valid else RecipientStatus.failed,
         )
         db.add(recipient)
-        created += 1
+        if valid:
+            created += 1
     db.flush()
     return created
 
@@ -204,6 +227,11 @@ def queue_campaign(db: Session, campaign: Campaign) -> int:
     queued_count = 0
     for recipient in recipients:
         if recipient.id in existing_recipient_ids:
+            continue
+        # Also covers the retry path: failed recipients are re-queued here, so
+        # an unusable number would otherwise come straight back into the queue.
+        if not is_valid_phone_number(recipient.phone_number):
+            recipient.status = RecipientStatus.failed
             continue
         queue_item = MessageQueue(
             id=uuid.uuid4(),
@@ -438,6 +466,11 @@ def recalculate_campaign_status(db: Session, campaign_id: uuid.UUID) -> Campaign
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
         return None
+
+    # Cancellation is an operator decision, not a transient delivery result.
+    # Keep it even when an already-claimed message reports its final result.
+    if campaign.status == CampaignStatus.cancelled:
+        return campaign.status
 
     pending_count = db.execute(
         select(func.count(MessageQueue.id)).where(

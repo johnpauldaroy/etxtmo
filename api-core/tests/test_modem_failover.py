@@ -19,7 +19,7 @@ from app.models import (
     RecipientStatus,
 )
 from app.api.routes.node import pull_jobs
-from app.api.routes.queue import reassign_campaign_branch
+from app.api.routes.queue import cancel_campaign, reassign_campaign_branch
 from app.schemas import QueuePullRequest, QueueReassignBranchRequest
 from app.services.queue import apply_queue_results, pull_pending_queue_items
 
@@ -253,3 +253,66 @@ def test_reassign_rejects_same_branch(db_session, seeded_access):
             superuser,
         )
     assert exc_info.value.status_code == 400
+
+
+def test_cancel_campaign_stops_pending_but_preserves_in_flight(db_session, seeded_access):
+    branch = seeded_access["branch_a"]
+    user = seeded_access["user"]
+    pending_item = _queued_message(db_session, branch, user)
+    campaign = db_session.get(Campaign, pending_item.campaign_id)
+
+    in_flight_recipient = CampaignRecipient(
+        campaign_id=campaign.id,
+        branch_id=branch.id,
+        phone_number="+639181234567",
+        message_body="Already sending",
+        status=RecipientStatus.sending,
+    )
+    db_session.add(in_flight_recipient)
+    db_session.flush()
+    in_flight_item = MessageQueue(
+        branch_id=branch.id,
+        campaign_id=campaign.id,
+        campaign_recipient_id=in_flight_recipient.id,
+        status=QueueStatus.sending,
+        attempts=1,
+        max_attempts=3,
+        next_attempt_at=datetime.now(timezone.utc),
+    )
+    db_session.add(in_flight_item)
+    db_session.commit()
+
+    result = cancel_campaign(campaign.id, db_session, user)
+
+    assert result == {"status": "cancelled", "cancelled": 1, "in_flight": 1}
+    db_session.refresh(campaign)
+    db_session.refresh(pending_item)
+    db_session.refresh(in_flight_item)
+    db_session.refresh(in_flight_recipient)
+    assert campaign.status == CampaignStatus.cancelled
+    assert pending_item.status == QueueStatus.cancelled
+    assert pending_item.error_message == "Cancelled by user"
+    assert db_session.get(CampaignRecipient, pending_item.campaign_recipient_id).status == RecipientStatus.cancelled
+    assert in_flight_item.status == QueueStatus.sending
+    assert in_flight_recipient.status == RecipientStatus.sending
+
+
+def test_cancel_campaign_requires_branch_access(db_session, seeded_access):
+    import pytest
+    from fastapi import HTTPException
+
+    other_branch = seeded_access["branch_b"]
+    user = seeded_access["user"]
+    campaign = Campaign(
+        branch_id=other_branch.id,
+        name="Other branch campaign",
+        status=CampaignStatus.queued,
+        timezone="Asia/Manila",
+    )
+    db_session.add(campaign)
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        cancel_campaign(campaign.id, db_session, user)
+
+    assert exc_info.value.status_code == 403

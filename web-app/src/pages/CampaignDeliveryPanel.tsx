@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CircleAlert, Eye, LoaderCircle, RotateCw, Shuffle, X } from "lucide-react";
+import { Ban, CircleAlert, Eye, LoaderCircle, RotateCw, Shuffle, X } from "lucide-react";
 
 import { apiRequest } from "../api/client";
 import { Badge } from "../components/ui/badge";
@@ -15,6 +15,7 @@ type CampaignDeliveryPanelProps = {
   token: string;
   branches?: Branch[];
   isSuperuser?: boolean;
+  refreshCampaigns?: () => Promise<void>;
 };
 
 type CampaignDeliveryRow = Campaign & { kind: "campaign"; message_count: number };
@@ -38,6 +39,7 @@ const readableStatus = (status: string) => {
 };
 
 const canReassign = (status: string) => ["queued", "pending", "failed", "error"].includes(status.toLowerCase());
+const canCancel = (status: string) => ["approved", "queued", "pending", "sending"].includes(status.toLowerCase());
 
 function aggregateApiStatus(statuses: string[]): string {
   if (statuses.every((status) => status === "sent")) return "sent";
@@ -48,7 +50,13 @@ function aggregateApiStatus(statuses: string[]): string {
   return statuses[0] ?? "queued";
 }
 
-export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuperuser = false }: CampaignDeliveryPanelProps) {
+export function CampaignDeliveryPanel({
+  campaigns,
+  token,
+  branches = [],
+  isSuperuser = false,
+  refreshCampaigns,
+}: CampaignDeliveryPanelProps) {
   const deliveryRows = useMemo<DeliveryRow[]>(() => {
     const rows: DeliveryRow[] = [];
     const apiGroups = new Map<string, Campaign[]>();
@@ -97,6 +105,10 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
   const [reassignBusy, setReassignBusy] = useState(false);
   const [reassignError, setReassignError] = useState("");
   const [reassignNotice, setReassignNotice] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<CampaignDeliveryRow | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const [cancelNotice, setCancelNotice] = useState("");
   const recipientPagination = usePagination(recipientDetails);
   const deliveryCounts = recipientDetails.reduce<Record<string, number>>((counts, recipient) => {
     counts[recipient.status] = (counts[recipient.status] ?? 0) + 1;
@@ -220,6 +232,32 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
     }
   }
 
+  async function submitCancel() {
+    if (!cancelTarget) return;
+    setCancelBusy(true);
+    setCancelError("");
+    try {
+      const result = await apiRequest<{ cancelled: number; in_flight: number }>(
+        `/api/queue/campaigns/${cancelTarget.id}/cancel`,
+        "POST",
+        undefined,
+        token,
+      );
+      const campaignName = cancelTarget.name;
+      setCancelTarget(null);
+      await refreshCampaigns?.();
+      setCancelNotice(
+        result.cancelled > 0
+          ? `"${campaignName}" cancelled. ${result.cancelled} unsent message${result.cancelled === 1 ? " was" : "s were"} stopped${result.in_flight ? `; ${result.in_flight} already in progress could not be recalled` : ""}.`
+          : `No messages in "${campaignName}" could be stopped${result.in_flight ? ` because ${result.in_flight} already in progress cannot be recalled` : ""}.`,
+      );
+    } catch (error) {
+      setCancelError((error as Error).message);
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   return (
     <>
       <Card>
@@ -232,6 +270,15 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
             <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
               <p className="text-sm text-emerald-900">{reassignNotice}</p>
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setReassignNotice("")}>
+                <X className="h-4 w-4" />
+                <span className="sr-only">Dismiss</span>
+              </Button>
+            </div>
+          )}
+          {cancelNotice && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm text-amber-950">{cancelNotice}</p>
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setCancelNotice("")}>
                 <X className="h-4 w-4" />
                 <span className="sr-only">Dismiss</span>
               </Button>
@@ -274,6 +321,21 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                         >
                           <Shuffle className="h-4 w-4" />
                           Reassign
+                        </Button>
+                      )}
+                      {delivery.kind === "campaign" && canCancel(delivery.status) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setCancelError("");
+                            setCancelTarget(delivery);
+                          }}
+                        >
+                          <Ban className="h-4 w-4" />
+                          Cancel
                         </Button>
                       )}
                       <Button type="button" size="sm" variant="outline" onClick={() => void viewDelivery(delivery)}>
@@ -502,6 +564,55 @@ export function CampaignDeliveryPanel({ campaigns, token, branches = [], isSuper
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {cancelTarget && (
+        <div className="fixed inset-0 z-[80] grid place-items-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            aria-label="Close cancel campaign dialog"
+            onClick={() => !cancelBusy && setCancelTarget(null)}
+          />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="cancel-campaign-title"
+            aria-describedby="cancel-campaign-description"
+            className="relative z-10 w-full max-w-md animate-slide-up rounded-xl border bg-card p-6 shadow-2xl"
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 id="cancel-campaign-title" className="text-lg font-semibold">Cancel campaign?</h2>
+                <p id="cancel-campaign-description" className="mt-1 text-sm text-muted-foreground">
+                  This stops every message in &quot;{cancelTarget.name}&quot; that has not been claimed by a modem.
+                  Messages already being sent cannot be recalled.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="-mr-2 -mt-2"
+                disabled={cancelBusy}
+                onClick={() => setCancelTarget(null)}
+              >
+                <X className="h-5 w-5" />
+                <span className="sr-only">Close</span>
+              </Button>
+            </div>
+            {cancelError && <p className="mb-3 text-sm text-destructive">{cancelError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" disabled={cancelBusy} onClick={() => setCancelTarget(null)}>
+                Keep campaign
+              </Button>
+              <Button type="button" variant="destructive" disabled={cancelBusy} onClick={() => void submitCancel()}>
+                {cancelBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+                Cancel campaign
+              </Button>
+            </div>
           </div>
         </div>
       )}
