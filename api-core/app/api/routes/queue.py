@@ -4,9 +4,10 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.deps import assert_branch_access, get_current_superuser, get_current_user
 from app.models import (
@@ -22,7 +23,7 @@ from app.models import (
 )
 from app.schemas import QueueItemOut, QueueReassignBranchRequest
 from app.services.audit import record_audit_event
-from app.services.queue import recalculate_campaign_status
+from app.services.queue import recalculate_campaign_status, stale_lock_cutoff
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -164,12 +165,23 @@ def cancel_campaign(
 
     # Queue claims use row locks too. Locked rows are already being handed to a
     # modem, so skip them instead of claiming that they were cancelled.
+    #
+    # Stale claims are the exception: only an agent reporting back moves a row
+    # out of `sending`, so one whose agent died stays there indefinitely and is
+    # not cancellable by any other path. Past the timeout it is no longer
+    # plausibly in flight, so an operator may stop it.
+    cutoff = stale_lock_cutoff(get_settings().queue_stale_lock_seconds)
+    stoppable = or_(
+        MessageQueue.status == QueueStatus.pending,
+        and_(
+            MessageQueue.status == QueueStatus.sending,
+            MessageQueue.locked_at.is_not(None),
+            MessageQueue.locked_at < cutoff,
+        ),
+    )
     items = db.execute(
         select(MessageQueue)
-        .where(
-            MessageQueue.campaign_id == campaign_id,
-            MessageQueue.status == QueueStatus.pending,
-        )
+        .where(MessageQueue.campaign_id == campaign_id, stoppable)
         .with_for_update(skip_locked=True),
     ).scalars().all()
 
@@ -196,6 +208,10 @@ def cancel_campaign(
             ),
         )
 
+    # Counted after the cancellations above are in the session so the rows just
+    # stopped are not also reported as in flight. Only genuinely live claims --
+    # those still inside the timeout -- are beyond recall.
+    db.flush()
     in_flight = db.execute(
         select(func.count(MessageQueue.id)).where(
             MessageQueue.campaign_id == campaign_id,

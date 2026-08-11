@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, engine
+from app.services.queue import reclaim_stale_sending
 from app.services.scheduler import evaluate_rules_once
 
 settings = get_settings()
@@ -26,9 +27,18 @@ async def scheduler_loop() -> None:
         db = SessionLocal()
         try:
             generated = evaluate_rules_once(db)
+            # Runs on the same tick rather than its own loop: both passes want a
+            # short session they can roll back independently of request traffic.
+            reclaimed = reclaim_stale_sending(db, settings.queue_stale_lock_seconds)
             db.commit()
             if generated:
                 logger.info("Generated %s campaigns from schedule rules", generated)
+            if reclaimed["requeued"] or reclaimed["failed"]:
+                logger.info(
+                    "Reclaimed stale sending rows: %s re-queued, %s failed",
+                    reclaimed["requeued"],
+                    reclaimed["failed"],
+                )
         except Exception:  # noqa: BLE001
             db.rollback()
             logger.exception("Scheduler loop failed")

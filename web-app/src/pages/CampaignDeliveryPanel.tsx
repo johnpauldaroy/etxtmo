@@ -246,10 +246,20 @@ export function CampaignDeliveryPanel({
       const campaignName = cancelTarget.name;
       setCancelTarget(null);
       await refreshCampaigns?.();
+      // An in-flight message is only beyond recall while it is genuinely in
+      // flight. Once its claim goes stale the sweeper resolves it, so the copy
+      // says "yet" rather than implying the row is stuck for good.
+      const inFlightNote = result.in_flight
+        ? `${result.in_flight} handed to a modem moments ago cannot be stopped yet; ${
+            result.in_flight === 1 ? "it" : "they"
+          } will retry or fail on their own if the modem never responds`
+        : "";
       setCancelNotice(
         result.cancelled > 0
-          ? `"${campaignName}" cancelled. ${result.cancelled} unsent message${result.cancelled === 1 ? " was" : "s were"} stopped${result.in_flight ? `; ${result.in_flight} already in progress could not be recalled` : ""}.`
-          : `No messages in "${campaignName}" could be stopped${result.in_flight ? ` because ${result.in_flight} already in progress cannot be recalled` : ""}.`,
+          ? `"${campaignName}" cancelled. ${result.cancelled} unsent message${
+              result.cancelled === 1 ? " was" : "s were"
+            } stopped${inFlightNote ? `; ${inFlightNote}` : ""}.`
+          : `No messages in "${campaignName}" could be stopped${inFlightNote ? ` because ${inFlightNote}` : ""}.`,
       );
     } catch (error) {
       setCancelError((error as Error).message);

@@ -464,6 +464,89 @@ def apply_queue_results(
     return {"sent": sent, "failed": failed}
 
 
+def stale_lock_cutoff(stale_after_seconds: int | None = None) -> datetime:
+    """Rows claimed before this moment have outlived a plausible send."""
+    if stale_after_seconds is None:
+        stale_after_seconds = DEFAULT_STALE_LOCK_SECONDS
+    return now_utc() - timedelta(seconds=stale_after_seconds)
+
+
+def reclaim_stale_sending(db: Session, stale_after_seconds: int | None = None) -> dict[str, int]:
+    """Return rows whose claiming agent never reported a result.
+
+    Deliberately mirrors the failure branch of `record_results`: an attempt is
+    counted, then the row either goes back to `pending` for another modem or --
+    once it has burned `max_attempts` -- lands in `failed`. Treating a lost
+    claim as a failed attempt rather than an instant failure keeps a merely
+    slow or restarted agent from writing off a message it may have delivered.
+
+    `locked_at IS NOT NULL` guards the sweep: a row is only stale if we can see
+    when it was claimed, so rows predating the timestamp are left alone rather
+    than reclaimed on the strength of a null.
+    """
+    rows = db.execute(
+        select(MessageQueue)
+        .where(
+            MessageQueue.status == QueueStatus.sending,
+            MessageQueue.locked_at.is_not(None),
+            MessageQueue.locked_at < stale_lock_cutoff(stale_after_seconds),
+        )
+        .with_for_update(skip_locked=True),
+    ).scalars().all()
+
+    requeued = 0
+    failed = 0
+    affected_campaign_ids: set[uuid.UUID] = set()
+
+    for row in rows:
+        row.attempts += 1
+        row.error_message = "Modem never reported a result; send timed out"
+        row.locked_at = None
+        row.modem_id = None
+        row.execution_branch_id = None
+        row.failover_route_id = None
+        affected_campaign_ids.add(row.campaign_id)
+
+        recipient = db.get(CampaignRecipient, row.campaign_recipient_id)
+
+        if row.attempts >= row.max_attempts:
+            row.status = QueueStatus.failed
+            if recipient is not None:
+                recipient.status = RecipientStatus.failed
+            failed += 1
+        else:
+            row.status = QueueStatus.pending
+            row.next_attempt_at = now_utc() + compute_backoff(row.attempts)
+            if recipient is not None:
+                recipient.status = RecipientStatus.pending
+            requeued += 1
+
+        db.add(
+            MessageLog(
+                branch_id=row.branch_id,
+                campaign_id=row.campaign_id,
+                queue_id=row.id,
+                recipient_phone=recipient.phone_number if recipient else "",
+                event_type="queue_stale_reclaimed",
+                event_status=row.status.value,
+                details_json={
+                    "attempts": row.attempts,
+                    "max_attempts": row.max_attempts,
+                    "error_message": row.error_message,
+                },
+            ),
+        )
+
+    # Same ordering constraint as record_results: autoflush is off, so the
+    # status writes must land before the campaign totals are recounted.
+    db.flush()
+    for campaign_id in affected_campaign_ids:
+        recalculate_campaign_status(db, campaign_id)
+    db.flush()
+
+    return {"requeued": requeued, "failed": failed}
+
+
 def recalculate_campaign_status(db: Session, campaign_id: uuid.UUID) -> CampaignStatus | None:
     """
     Derive a campaign's status from its queue rows. Safe to call any number of
