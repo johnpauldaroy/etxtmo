@@ -76,6 +76,12 @@ def is_valid_phone_number(phone_number: str | None) -> bool:
 
 DEFAULT_MODEM_OFFLINE_AFTER_SECONDS = 90
 
+# How long a row may sit in `sending` before we treat the claim as lost. Only a
+# result posted back by the agent moves a claimed row, so an agent that dies
+# mid-send (crash, restart, modem swallowing the number without answering)
+# strands it in `sending` forever -- there is no other path out.
+DEFAULT_STALE_LOCK_SECONDS = 300
+
 
 def healthy_modem_count(db: Session, branch_id: uuid.UUID, offline_after_seconds: int = 90) -> int:
     cutoff = now_utc() - timedelta(seconds=offline_after_seconds)

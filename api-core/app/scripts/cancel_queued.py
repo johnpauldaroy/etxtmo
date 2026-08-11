@@ -19,12 +19,9 @@ rows use in the UI:
 
 Defaults to a dry run; nothing is written until --apply is passed.
 
-Cancellation marks pending rows as `failed` with a recognisable
-error_message, because QueueStatus has no `cancelled` member. Consequence
-worth knowing: the campaign then reads as "Failed" in the UI, and the
-retry-failed endpoint would re-queue these rows if anyone clicks it. Pass
---include-failed only if you accept re-cancelling genuine delivery
-failures alongside them.
+Cancellation marks pending rows as `cancelled`, so they remain visible in
+delivery history but cannot be picked up by an agent or retry action. Pass
+--include-failed only if you also want existing failures marked as cancelled.
 """
 
 from __future__ import annotations
@@ -36,9 +33,17 @@ from sqlalchemy import func, select
 
 from app.api.routes.campaigns import _api_key_id_from_campaign
 from app.core.database import SessionLocal, engine
-from app.models import ApiKey, Campaign, CampaignRecipient, MessageLog, MessageQueue, QueueStatus, RecipientStatus
+from app.models import (
+    ApiKey,
+    Campaign,
+    CampaignRecipient,
+    CampaignStatus,
+    MessageLog,
+    MessageQueue,
+    QueueStatus,
+    RecipientStatus,
+)
 from app.services.audit import record_audit_event
-from app.services.queue import recalculate_campaign_status
 
 CANCEL_MARKER = "cancelled by operator"
 
@@ -188,7 +193,7 @@ def cancel_campaign(db, campaign_id: uuid.UUID, *, apply: bool, include_failed: 
         # take; anything already flipped to sending stays with the agent.
         if item.status not in target_statuses:
             continue
-        item.status = QueueStatus.failed
+        item.status = QueueStatus.cancelled
         item.error_message = CANCEL_MARKER
         item.attempts = item.max_attempts  # keeps the dispatch backoff path from reviving it
         item.locked_at = None
@@ -199,7 +204,7 @@ def cancel_campaign(db, campaign_id: uuid.UUID, *, apply: bool, include_failed: 
 
         recipient = db.get(CampaignRecipient, item.campaign_recipient_id)
         if recipient is not None:
-            recipient.status = RecipientStatus.failed
+            recipient.status = RecipientStatus.cancelled
 
         db.add(
             MessageLog(
@@ -208,7 +213,7 @@ def cancel_campaign(db, campaign_id: uuid.UUID, *, apply: bool, include_failed: 
                 queue_id=item.id,
                 recipient_phone=recipient.phone_number if recipient else "",
                 event_type="queue_cancelled",
-                event_status=QueueStatus.failed.value,
+                event_status=QueueStatus.cancelled.value,
                 details_json={"reason": CANCEL_MARKER},
             ),
         )
@@ -222,7 +227,7 @@ def cancel_campaign(db, campaign_id: uuid.UUID, *, apply: bool, include_failed: 
         branch_id=campaign.branch_id,
         payload={"cancelled": len(items), "reason": CANCEL_MARKER},
     )
-    recalculate_campaign_status(db, campaign_id)
+    campaign.status = CampaignStatus.cancelled
     return len(items)
 
 

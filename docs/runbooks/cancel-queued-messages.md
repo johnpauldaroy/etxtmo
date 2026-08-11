@@ -14,6 +14,9 @@ out yet. Stops pending messages; does not delete the campaign or its history.
 The script reports all three counts before it writes anything, so you always see
 how much was already beyond recall.
 
+For ordinary campaigns, the **Cancel** action in Campaign deliveries performs
+the same operation and reports any messages that were already in flight.
+
 ## Fastest possible stop
 
 If a large campaign is actively going out and every second counts, stop the
@@ -27,7 +30,7 @@ Run these **inside the container** -- Dokploy's Docker Terminal for the app is
 already a shell in the container, so there is no `docker exec` prefix there.
 From the VPS host instead, prefix each with `docker exec -it <container>`.
 
-### API messages (the "API — <label>" rows)
+### API messages (the "API - <label>" rows)
 
 Each message sent through the SMS gateway API creates its **own** campaign, so
 an API key showing "2805 API messages" is 2805 single-recipient campaigns.
@@ -61,28 +64,11 @@ repeat as often as you like.
 If `cancel-queued` is not found, the deployed image predates it; use
 `cd /app && PYTHONPATH=/app python -m app.scripts.cancel_queued` instead.
 
-## Known consequence: cancelled shows as "Failed"
+## Cancelled status
 
-`QueueStatus` has no `cancelled` member, so cancelled rows are marked `failed`
-with `error_message = "cancelled by operator"`.
-
-Two things follow from this:
-
-1. The campaign displays as **Failed** in the UI, not "Cancelled" —
-   indistinguishable at a glance from a genuine delivery failure.
-2. **The retry-failed endpoint would re-send them.** `POST
-   /queue/campaigns/{id}/retry-failed` re-queues every failed row for a
-   campaign, cancelled ones included. Do not run retry-failed on a campaign you
-   cancelled.
-
-The script sets `attempts = max_attempts` as a guard so the automatic backoff
-path cannot revive a cancelled message on its own, but an explicit
-retry-failed click resets that.
-
-Removing this footgun properly means adding a `cancelled` value to the
-`QueueStatus` enum (an Alembic migration, since it is a Postgres `ENUM` type)
-and excluding it from the retry paths. Worth doing if cancelling becomes
-routine.
+Cancelled campaigns and their stopped recipients display as **Cancelled** in
+the UI. Cancelled queue rows are separate from genuine failures, so neither the
+automatic retry path nor **Resend all failed** can queue them again.
 
 ## Why this is not automatic
 

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
     system_timezone: str = Field(default="Asia/Manila", alias="SYSTEM_TIMEZONE")
     scheduler_enabled: bool = Field(default=True, alias="SCHEDULER_ENABLED")
+    queue_stale_lock_seconds: int = Field(default=300, alias="QUEUE_STALE_LOCK_SECONDS")
     seed_admin_email: str | None = Field(default=None, alias="SEED_ADMIN_EMAIL")
     seed_admin_username: str | None = Field(default=None, alias="SEED_ADMIN_USERNAME")
     seed_admin_password: str | None = Field(default=None, alias="SEED_ADMIN_PASSWORD")
